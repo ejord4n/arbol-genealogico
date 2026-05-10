@@ -7,17 +7,17 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width:100%; height:100%; overflow:hidden; background:#111827; font-family:'Palatino Linotype','Book Antiqua',Palatino,serif; }
-  #app { width:100vw; height:100vh; position:relative; overflow:hidden; }
+  #app { width:100vw; height:100svh; position:relative; overflow:hidden; }
 
   /* HEADER */
-  #header { position:absolute; top:0; left:0; right:0; z-index:10; background:linear-gradient(to bottom,rgba(17,24,39,.95),transparent); padding:12px 16px; }
-  #header-inner { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-  #title-block h1 { font-size:20px; color:#fde68a; letter-spacing:3px; text-transform:uppercase; font-weight:400; }
-  #title-block p  { font-size:11px; color:#9ca3af; letter-spacing:2px; margin-top:2px; }
-  #btn-group { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  #header { position:absolute; top:0; left:0; right:0; z-index:10; background:linear-gradient(to bottom,rgba(17,24,39,.95),transparent); padding:10px 12px; }
+  #header-inner { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+  #title-block h1 { font-size:17px; color:#fde68a; letter-spacing:2px; text-transform:uppercase; font-weight:400; }
+  #title-block p  { font-size:10px; color:#9ca3af; letter-spacing:2px; margin-top:1px; }
+  #btn-group { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 
   /* BUTTONS */
-  .btn { border-radius:6px; padding:7px 13px; font-size:12px; cursor:pointer; letter-spacing:.5px; font-family:inherit; white-space:nowrap; transition:filter .15s; border:1px solid transparent; }
+  .btn { border-radius:6px; padding:6px 11px; font-size:12px; cursor:pointer; letter-spacing:.5px; font-family:inherit; white-space:nowrap; transition:filter .15s; border:1px solid transparent; }
   .btn:hover { filter:brightness(1.25); }
   .btn-green  { background:#14291a; border-color:#22c55e; color:#f0e8d8; }
   .btn-red    { background:#291414; border-color:#ef4444; color:#f0e8d8; }
@@ -29,20 +29,27 @@
   .btn-auth-off { background:#291414; border:1px solid #ef4444; color:#f0e8d8; }
 
   /* CANVAS */
-  #canvas { width:100%; height:100%; cursor:grab; display:block; }
+  #canvas { width:100%; height:100%; cursor:grab; display:block; touch-action:none; }
   #canvas.dragging { cursor:grabbing; }
 
   /* LEGEND */
-  #legend { position:absolute; bottom:20px; left:20px; z-index:10; background:rgba(15,23,42,.82); border-radius:10px; padding:10px 14px; backdrop-filter:blur(4px); display:flex; flex-direction:column; gap:6px; }
+  #legend { position:absolute; bottom:90px; left:12px; z-index:10; background:rgba(15,23,42,.88); border-radius:10px; padding:8px 12px; backdrop-filter:blur(4px); display:flex; flex-direction:column; gap:5px; }
   .legend-item { display:flex; align-items:center; gap:8px; font-size:11px; color:#9ca3af; }
+  @media(max-width:480px){
+    #legend { bottom:80px; left:8px; padding:6px 10px; }
+    .legend-item { font-size:10px; gap:6px; }
+    #legend > div:last-child { display:none; }
+  }
 
   /* ZOOM */
-  #zoom-controls { position:absolute; bottom:20px; z-index:10; display:flex; flex-direction:column; gap:4px; transition:right .2s; right:20px; }
+  #zoom-controls { position:absolute; bottom:90px; z-index:10; display:flex; flex-direction:column; gap:4px; transition:right .2s; right:12px; }
+  @media(max-width:480px){ #zoom-controls { bottom:80px; right:8px; } }
 
   /* INFO PANEL */
-  #info-panel { position:absolute; top:0; right:0; bottom:0; width:300px; background:linear-gradient(160deg,#0f172a,#1e2a3a); border-left:1px solid #3b82f6; z-index:20; padding:72px 20px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; transform:translateX(100%); transition:transform .25s ease; }
+  #info-panel { position:absolute; top:0; right:0; bottom:0; width:300px; background:linear-gradient(160deg,#0f172a,#1e2a3a); border-left:1px solid #3b82f6; z-index:20; padding:68px 20px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; transform:translateX(100%); transition:transform .25s ease; }
   #info-panel.open { transform:translateX(0); }
-  #info-close { position:absolute; top:56px; right:16px; background:none; border:none; color:#9ca3af; font-size:20px; cursor:pointer; }
+  @media(max-width:480px){ #info-panel { width:100vw; } }
+  #info-close { position:absolute; top:54px; right:16px; background:none; border:none; color:#9ca3af; font-size:20px; cursor:pointer; }
   .info-header { text-align:center; padding-bottom:12px; border-bottom:1px solid #2d3f5a; }
   .info-header .gender-icon { font-size:40px; margin-bottom:8px; }
   .info-header h2 { font-size:16px; color:#fde68a; line-height:1.3; }
@@ -56,7 +63,7 @@
   /* MODAL */
   .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:100; display:none; align-items:center; justify-content:center; }
   .modal-overlay.open { display:flex; }
-  .modal-box { background:linear-gradient(135deg,#0f172a,#1e2a3a); border:1px solid #3b82f6; border-radius:12px; padding:24px; width:340px; max-width:92vw; max-height:82vh; overflow-y:auto; }
+  .modal-box { background:linear-gradient(135deg,#0f172a,#1e2a3a); border:1px solid #3b82f6; border-radius:12px; padding:24px; width:340px; max-width:92vw; max-height:82svh; overflow-y:auto; }
   .modal-box h3 { color:#fbbf24; font-size:16px; letter-spacing:1px; margin-bottom:16px; }
   .modal-field { margin-bottom:10px; }
   .modal-field label { font-size:11px; color:#9ca3af; display:block; margin-bottom:4px; letter-spacing:1px; }
@@ -70,7 +77,7 @@
   #status-bar.show { display:block; }
 
   /* TOAST */
-  #toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px); background:#1e2a3a; border:1px solid #3b82f6; color:#f9fafb; padding:10px 20px; border-radius:8px; font-size:13px; z-index:200; opacity:0; transition:opacity .3s,transform .3s; pointer-events:none; }
+  #toast { position:fixed; bottom:100px; left:50%; transform:translateX(-50%) translateY(20px); background:#1e2a3a; border:1px solid #3b82f6; color:#f9fafb; padding:10px 20px; border-radius:8px; font-size:13px; z-index:200; opacity:0; transition:opacity .3s,transform .3s; pointer-events:none; white-space:nowrap; }
   #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
   ::-webkit-scrollbar { width:6px; }
@@ -393,10 +400,37 @@ function buildLayout(rootId) {
   while(q.length){ const c=q.shift(); parentsOf(c).forEach(p=>{ if(gen[p]===undefined){gen[p]=gen[c]-1;q.push(p);} }); }
   q=[rootId]; const seen=new Set([rootId]);
   while(q.length){ const c=q.shift(); childrenOf(c).forEach(ch=>{ if(!seen.has(ch)){seen.add(ch);if(gen[ch]===undefined)gen[ch]=gen[c]+1;q.push(ch);} }); }
+  // Partners inherit same generation
   let changed=true;
   while(changed){ changed=false; data.couples.forEach(({p1,p2})=>{ if(gen[p1]!==undefined&&gen[p2]===undefined){gen[p2]=gen[p1];changed=true;} if(gen[p2]!==undefined&&gen[p1]===undefined){gen[p1]=gen[p2];changed=true;} }); }
 
-  const allIds=[...new Set(Object.keys(gen))];
+  // ── FIX: assign any node not yet reached via BFS ──
+  // Nodes added as siblings/children of nodes already in tree may share
+  // a parent that IS in gen, so we can derive their generation from relations.
+  // Repeat until stable.
+  changed=true;
+  while(changed){
+    changed=false;
+    Object.keys(data.nodes).forEach(id=>{
+      if(gen[id]!==undefined)return;
+      // try via parent relation
+      const rel=data.relations.find(r=>r.child===id);
+      if(rel){
+        const pg=[rel.father,rel.mother].filter(Boolean).find(p=>gen[p]!==undefined);
+        if(pg!==undefined){gen[id]=gen[pg]+1;changed=true;return;}
+      }
+      // try via child relation (parent of known child)
+      const asParent=data.relations.find(r=>(r.father===id||r.mother===id)&&gen[r.child]!==undefined);
+      if(asParent){gen[id]=gen[asParent.child]-1;changed=true;return;}
+      // try via partner
+      const cp=data.couples.find(c=>c.p1===id||c.p2===id);
+      if(cp){const other=cp.p1===id?cp.p2:cp.p1;if(gen[other]!==undefined){gen[id]=gen[other];changed=true;}}
+    });
+  }
+  // Any still-unknown nodes: place at generation 0
+  Object.keys(data.nodes).forEach(id=>{ if(gen[id]===undefined)gen[id]=0; });
+
+  const allIds=Object.keys(data.nodes);
   const allGens=[...new Set(Object.values(gen))].sort((a,b)=>a-b);
   const minGen=allGens[0];
 
@@ -435,6 +469,7 @@ function buildLayout(rootId) {
     if(ideals.length){const im=(Math.min(...ideals)+Math.max(...ideals))/2,cm=(cx[0]+cx[cx.length-1])/2,sh=im-cm;for(let i=0;i<cx.length;i++)cx[i]+=sh;}
     units.forEach((u,i)=>placeUnit(u,cx[i],rowY));
   });
+  // Any still-unpositioned nodes (shouldn't happen now, but safety net)
   let ox=2000;
   allIds.forEach(id=>{ if(!pos[id]){pos[id]={x:ox,y:(gen[id]-minGen)*(NODE_H_MIN+V_GAP)};ox+=NODE_W+H_GAP;} });
   const xs=Object.values(pos).map(p=>p.x), midX=(Math.min(...xs)+Math.max(...xs))/2;
@@ -690,10 +725,46 @@ canvas.addEventListener('mousedown',e=>{ if(e.target.closest('[data-node-id]'))r
 window.addEventListener('mousemove',e=>{ if(!dragging)return;pan={x:e.clientX-dragStart.x,y:e.clientY-dragStart.y};document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`); });
 window.addEventListener('mouseup',()=>{dragging=false;canvas.classList.remove('dragging');});
 canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(2,Math.max(0.2,zoom-e.deltaY*0.001));document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);},{passive:false});
-let lastTouch=null;
-canvas.addEventListener('touchstart',e=>{if(e.touches.length===1)lastTouch={x:e.touches[0].clientX-pan.x,y:e.touches[0].clientY-pan.y};});
-canvas.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length===1&&lastTouch){pan={x:e.touches[0].clientX-lastTouch.x,y:e.touches[0].clientY-lastTouch.y};document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`); }},{passive:false});
-canvas.addEventListener('touchend',()=>lastTouch=null);
+
+// Touch: pan (1 finger) + pinch-to-zoom (2 fingers)
+let lastTouches = null;
+function getTouchMid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
+function getTouchDist(t){ const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY; return Math.hypot(dx,dy); }
+
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  lastTouches = e.touches;
+},{passive:false});
+
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const t = e.touches;
+  if(t.length===1 && lastTouches){
+    // single finger pan
+    const dx=t[0].clientX-lastTouches[0].clientX;
+    const dy=t[0].clientY-lastTouches[0].clientY;
+    pan={x:pan.x+dx, y:pan.y+dy};
+    document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);
+  } else if(t.length===2 && lastTouches && lastTouches.length===2){
+    // two finger pinch-zoom + pan
+    const newDist = getTouchDist(t);
+    const oldDist = getTouchDist(lastTouches);
+    const newMid  = getTouchMid(t);
+    const oldMid  = getTouchMid(lastTouches);
+    const scale   = newDist / oldDist;
+    const newZoom = Math.min(2, Math.max(0.2, zoom * scale));
+    // adjust pan so zoom centers on pinch midpoint
+    pan = {
+      x: newMid.x - (newMid.x - pan.x) * (newZoom / zoom) + (newMid.x - oldMid.x),
+      y: newMid.y - (newMid.y - pan.y) * (newZoom / zoom) + (newMid.y - oldMid.y),
+    };
+    zoom = newZoom;
+    document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);
+  }
+  lastTouches = t;
+},{passive:false});
+
+canvas.addEventListener('touchend',e=>{ lastTouches = e.touches.length ? e.touches : null; },{passive:false});
 document.getElementById('btn-zoom-in').onclick  =()=>{zoom=Math.min(2,zoom+0.1);render();};
 document.getElementById('btn-zoom-out').onclick =()=>{zoom=Math.max(0.2,zoom-0.1);render();};
 document.getElementById('btn-zoom-home').onclick=()=>{zoom=0.85;pan={x:window.innerWidth/2,y:140};render();};
