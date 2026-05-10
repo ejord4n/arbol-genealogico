@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Árbol Genealógico · Familia Reyna Elizondo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#111827; font-family:'Palatino Linotype','Book Antiqua',Palatino,serif; }
+  #app { width:100vw; height:100vh; position:relative; overflow:hidden; }
+
+  /* HEADER */
+  #header { position:absolute; top:0; left:0; right:0; z-index:10; background:linear-gradient(to bottom,rgba(17,24,39,.95),transparent); padding:12px 16px; }
+  #header-inner { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  #title-block h1 { font-size:20px; color:#fde68a; letter-spacing:3px; text-transform:uppercase; font-weight:400; }
+  #title-block p  { font-size:11px; color:#9ca3af; letter-spacing:2px; margin-top:2px; }
+  #btn-group { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+
+  /* BUTTONS */
+  .btn { border-radius:6px; padding:7px 13px; font-size:12px; cursor:pointer; letter-spacing:.5px; font-family:inherit; white-space:nowrap; transition:filter .15s; border:1px solid transparent; }
+  .btn:hover { filter:brightness(1.25); }
+  .btn-green  { background:#14291a; border-color:#22c55e; color:#f0e8d8; }
+  .btn-red    { background:#291414; border-color:#ef4444; color:#f0e8d8; }
+  .btn-blue   { background:#1e2a3a; border-color:#3b82f6; color:#f0e8d8; }
+  .btn-indigo { background:#1e1b4b; border-color:#818cf8; color:#f0e8d8; }
+  .btn-amber  { background:#2a2200; border-color:#f59e0b; color:#f0e8d8; }
+  .btn-full   { width:100%; display:block; margin-bottom:6px; text-align:center; }
+  .btn-auth-on  { background:#14291a; border:1px solid #22c55e; color:#f0e8d8; }
+  .btn-auth-off { background:#291414; border:1px solid #ef4444; color:#f0e8d8; }
+
+  /* CANVAS */
+  #canvas { width:100%; height:100%; cursor:grab; display:block; }
+  #canvas.dragging { cursor:grabbing; }
+
+  /* LEGEND */
+  #legend { position:absolute; bottom:20px; left:20px; z-index:10; background:rgba(15,23,42,.82); border-radius:10px; padding:10px 14px; backdrop-filter:blur(4px); display:flex; flex-direction:column; gap:6px; }
+  .legend-item { display:flex; align-items:center; gap:8px; font-size:11px; color:#9ca3af; }
+
+  /* ZOOM */
+  #zoom-controls { position:absolute; bottom:20px; z-index:10; display:flex; flex-direction:column; gap:4px; transition:right .2s; right:20px; }
+
+  /* INFO PANEL */
+  #info-panel { position:absolute; top:0; right:0; bottom:0; width:300px; background:linear-gradient(160deg,#0f172a,#1e2a3a); border-left:1px solid #3b82f6; z-index:20; padding:72px 20px 20px; overflow-y:auto; display:flex; flex-direction:column; gap:12px; transform:translateX(100%); transition:transform .25s ease; }
+  #info-panel.open { transform:translateX(0); }
+  #info-close { position:absolute; top:56px; right:16px; background:none; border:none; color:#9ca3af; font-size:20px; cursor:pointer; }
+  .info-header { text-align:center; padding-bottom:12px; border-bottom:1px solid #2d3f5a; }
+  .info-header .gender-icon { font-size:40px; margin-bottom:8px; }
+  .info-header h2 { font-size:16px; color:#fde68a; line-height:1.3; }
+  .info-header .year { font-size:13px; color:#fbbf24; margin-top:4px; }
+  .info-rows { display:flex; flex-direction:column; gap:8px; }
+  .info-row { background:#1e2a3a; border-radius:6px; padding:8px 10px; }
+  .info-row-label { font-size:10px; color:#60a5fa; letter-spacing:1px; text-transform:uppercase; }
+  .info-row-value { font-size:12px; color:#d0c8e0; margin-top:2px; line-height:1.4; }
+  .info-actions { display:flex; flex-direction:column; gap:8px; margin-top:auto; padding-top:12px; }
+
+  /* MODAL */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:100; display:none; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { background:linear-gradient(135deg,#0f172a,#1e2a3a); border:1px solid #3b82f6; border-radius:12px; padding:24px; width:340px; max-width:92vw; max-height:82vh; overflow-y:auto; }
+  .modal-box h3 { color:#fbbf24; font-size:16px; letter-spacing:1px; margin-bottom:16px; }
+  .modal-field { margin-bottom:10px; }
+  .modal-field label { font-size:11px; color:#9ca3af; display:block; margin-bottom:4px; letter-spacing:1px; }
+  .modal-field input, .modal-field select { width:100%; background:#0f172a; border:1px solid #3b82f6; border-radius:6px; padding:8px 10px; color:#f9fafb; font-size:13px; font-family:inherit; outline:none; }
+  .modal-btns { display:flex; gap:8px; margin-top:14px; }
+  .modal-btns .btn { flex:1; }
+  .error-msg { color:#f87171; font-size:12px; margin-top:6px; }
+
+  /* STATUS BAR */
+  #status-bar { position:absolute; top:0; left:50%; transform:translateX(-50%); z-index:50; background:#1e2a3a; border:1px solid #3b82f6; border-top:none; border-radius:0 0 8px 8px; padding:4px 16px; font-size:11px; color:#9ca3af; display:none; }
+  #status-bar.show { display:block; }
+
+  /* TOAST */
+  #toast { position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px); background:#1e2a3a; border:1px solid #3b82f6; color:#f9fafb; padding:10px 20px; border-radius:8px; font-size:13px; z-index:200; opacity:0; transition:opacity .3s,transform .3s; pointer-events:none; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#0f172a; }
+  ::-webkit-scrollbar-thumb { background:#3b82f6; border-radius:3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- STATUS -->
+  <div id="status-bar">⏳ Sincronizando con la nube…</div>
+
+  <!-- HEADER -->
+  <div id="header">
+    <div id="header-inner">
+      <div id="title-block">
+        <h1>Árbol Genealógico</h1>
+        <p>FAMILIA REYNA · ELIZONDO</p>
+      </div>
+      <div id="btn-group">
+        <button class="btn btn-green"    id="btn-add">+ Añadir</button>
+        <button class="btn btn-auth-off" id="btn-auth">🔒 Editar</button>
+        <button class="btn btn-blue"     id="btn-export" style="display:none">⬇ Exportar</button>
+        <button class="btn btn-blue"     id="btn-import" style="display:none">⬆ Importar</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" />
+        <button class="btn btn-indigo"   id="btn-full"   style="display:none">← Vista completa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CANVAS -->
+  <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <g id="world"></g>
+  </svg>
+
+  <!-- LEGEND -->
+  <div id="legend">
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#facc15" stroke-width="2"/></svg>Seleccionado</div>
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#34d399" stroke-width="2"/></svg>Ancestros</div>
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#c084fc" stroke-width="2"/></svg>Descendientes</div>
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#f59e0b" stroke-width="3"/></svg>Pareja ♥</div>
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#60a5fa" stroke-width="2"/></svg>Padre / Madre</div>
+    <div class="legend-item"><svg width="22" height="10"><line x1="0" y1="5" x2="22" y2="5" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4,3"/></svg>Hermanos</div>
+    <div style="margin-top:4px;font-size:10px;color:#4b5563;border-top:1px solid #1e2a3a;padding-top:6px;">Scroll: zoom · Drag: mover</div>
+  </div>
+
+  <!-- ZOOM -->
+  <div id="zoom-controls">
+    <button class="btn btn-blue" id="btn-zoom-in">+</button>
+    <button class="btn btn-blue" id="btn-zoom-out">−</button>
+    <button class="btn btn-blue" id="btn-zoom-home">⌂</button>
+  </div>
+
+  <!-- INFO PANEL -->
+  <div id="info-panel">
+    <button id="info-close">✕</button>
+    <div class="info-header">
+      <div class="gender-icon" id="ip-gender"></div>
+      <h2 id="ip-name"></h2>
+      <p class="year" id="ip-year"></p>
+    </div>
+    <div class="info-rows" id="ip-rows"></div>
+    <div class="info-actions">
+      <button class="btn btn-blue  btn-full" id="ip-btn-focus">🌳 Ver árbol desde aquí</button>
+      <button class="btn btn-amber btn-full" id="ip-btn-edit">✏️ Editar datos</button>
+      <button class="btn btn-red   btn-full" id="ip-btn-delete">🗑 Eliminar persona</button>
+    </div>
+  </div>
+
+  <!-- AUTH MODAL -->
+  <div class="modal-overlay" id="modal-auth">
+    <div class="modal-box">
+      <h3>🔒 Acceso de Editor</h3>
+      <p style="font-size:13px;color:#9ca3af;margin-bottom:12px;">Introduce la contraseña para continuar.</p>
+      <div class="modal-field"><input type="password" id="auth-input" placeholder="Contraseña" /></div>
+      <div id="auth-error" class="error-msg" style="display:none"></div>
+      <div class="modal-btns">
+        <button class="btn btn-green" id="auth-ok">Entrar</button>
+        <button class="btn btn-red"   id="auth-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT MODAL -->
+  <div class="modal-overlay" id="modal-edit">
+    <div class="modal-box">
+      <h3>✏️ Editar Persona</h3>
+      <div class="modal-field"><label>NOMBRE COMPLETO</label><input type="text" id="edit-name" /></div>
+      <div class="modal-field"><label>AÑO DE NACIMIENTO</label><input type="text" id="edit-year" /></div>
+      <div class="modal-field"><label>LUGAR DE NACIMIENTO</label><input type="text" id="edit-birthplace" placeholder="(próximamente)" /></div>
+      <div class="modal-field"><label>GÉNERO</label>
+        <select id="edit-gender"><option value="m">Masculino ♂</option><option value="f">Femenino ♀</option></select>
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-green" id="edit-save">Guardar</button>
+        <button class="btn btn-red"   id="edit-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD MODAL -->
+  <div class="modal-overlay" id="modal-add">
+    <div class="modal-box">
+      <h3>+ Añadir Persona</h3>
+      <div class="modal-field"><label>NOMBRE COMPLETO</label><input type="text" id="add-name" /></div>
+      <div class="modal-field"><label>AÑO DE NACIMIENTO</label><input type="text" id="add-year" /></div>
+      <div class="modal-field"><label>GÉNERO</label>
+        <select id="add-gender"><option value="m">Masculino ♂</option><option value="f">Femenino ♀</option></select>
+      </div>
+      <div class="modal-field"><label>RELACIÓN CON</label><select id="add-related"></select></div>
+      <div class="modal-field"><label>TIPO DE RELACIÓN</label>
+        <select id="add-relation">
+          <option value="child">Hijo/a de</option>
+          <option value="parent">Padre/Madre de</option>
+          <option value="sibling">Hermano/a de</option>
+          <option value="partner">Pareja de</option>
+        </select>
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-green" id="add-save">Añadir</button>
+        <button class="btn btn-red"   id="add-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRM -->
+  <div class="modal-overlay" id="modal-delete">
+    <div class="modal-box">
+      <h3>🗑 Confirmar eliminación</h3>
+      <p style="font-size:14px;color:#f9fafb;margin-bottom:6px;">¿Eliminar a <strong id="delete-name" style="color:#fde68a"></strong>?</p>
+      <p style="font-size:12px;color:#9ca3af;">Esta acción no se puede deshacer.</p>
+      <div class="modal-btns">
+        <button class="btn btn-red"  id="delete-confirm">Eliminar</button>
+        <button class="btn btn-blue" id="delete-cancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<!-- FIREBASE SDK -->
+<script type="module">
+import { initializeApp }                        from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc }    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ── Firebase config ──────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyAIW-gQqX0hyNvW18ViYVHEwxyp-d0EpCs",
+  authDomain:        "arbol-reyna-elizondo.firebaseapp.com",
+  projectId:         "arbol-reyna-elizondo",
+  storageBucket:     "arbol-reyna-elizondo.firebasestorage.app",
+  messagingSenderId: "431246358729",
+  appId:             "1:431246358729:web:9a35a646f38f8a47a37518"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db          = getFirestore(firebaseApp);
+const DOC_REF     = doc(db, "arbol", "data");
+
+// ── Constants ────────────────────────────────────────────────
+const PASSWORD   = "ReynaElizondo";
+const NODE_W     = 160;
+const NODE_H_MIN = 70;
+const H_GAP      = 48;
+const V_GAP      = 140;
+const C_PAD      = 24;
+const CHARS_LINE = 18;
+const LINE_H     = 14;
+const TOP_PAD    = 16;
+const YEAR_H     = 18;
+const BOT_PAD    = 8;
+const MARGIN     = 800;
+
+// ── Seed data (used only if Firestore is empty) ───────────────
+const SEED = {
+  nodes: {
+    "eric":     { id:"eric",     name:"Eric Jordan Reyna Elizondo",            year:"1998", gender:"m", photo:null, birthplace:null },
+    "alma":     { id:"alma",     name:"Alma Leticia Nuñez Garcia",             year:"2001", gender:"f", photo:null, birthplace:null },
+    "gerardo":  { id:"gerardo",  name:"Gerardo Eric Reyna Reyes",              year:"1974", gender:"m", photo:null, birthplace:null },
+    "alicia":   { id:"alicia",   name:"Alicia Elizondo Rodríguez",             year:"1974", gender:"f", photo:null, birthplace:null },
+    "eddic":    { id:"eddic",    name:"Eddic Zadkiel Reyna Elizondo",          year:"1999", gender:"m", photo:null, birthplace:null },
+    "lupita":   { id:"lupita",   name:"Lupita",                                year:null,   gender:"f", photo:null, birthplace:null },
+    "teodulo":  { id:"teodulo",  name:"Teodulo",                               year:null,   gender:"m", photo:null, birthplace:null },
+    "sergio":   { id:"sergio",   name:"Sergio Elizondo Vélez",                 year:"1954", gender:"m", photo:null, birthplace:null },
+    "angelica": { id:"angelica", name:"Filomena Angélica Rodríguez Gutiérrez", year:"1957", gender:"f", photo:null, birthplace:null },
+    "tomasa":   { id:"tomasa",   name:"Tomasa Vélez Hernández",                year:"1934", gender:"f", photo:null, birthplace:null },
+    "abundio":  { id:"abundio",  name:"Abundio Elizondo Villarreal",           year:null,   gender:"m", photo:null, birthplace:null },
+    "matilde":  { id:"matilde",  name:"Matilde Gutiérrez Sosa",                year:"1933", gender:"f", photo:null, birthplace:null },
+    "chon":     { id:"chon",     name:"Lorenzo Rodríguez Pérez (Chon)",        year:"1934", gender:"m", photo:null, birthplace:null },
+    "jesusita": { id:"jesusita", name:"María de Jesús Sosa (Jesusita)",        year:"1908", gender:"f", photo:null, birthplace:null },
+    "genaro":   { id:"genaro",   name:"Genaro Gutiérrez",                      year:"1897", gender:"m", photo:null, birthplace:null },
+    "eusebia":  { id:"eusebia",  name:"Eusebia",                               year:null,   gender:"f", photo:null, birthplace:null },
+    "goya":     { id:"goya",     name:"Gregoria Pérez (Goya)",                 year:null,   gender:"f", photo:null, birthplace:null },
+    "lorenzop": { id:"lorenzop", name:"Lorenzo Rodríguez",                     year:null,   gender:"m", photo:null, birthplace:null },
+  },
+  relations: [
+    { child:"eric",     father:"gerardo",  mother:"alicia"   },
+    { child:"eddic",    father:"gerardo",  mother:"alicia"   },
+    { child:"alicia",   father:"sergio",   mother:"angelica" },
+    { child:"sergio",   father:"abundio",  mother:"tomasa"   },
+    { child:"angelica", father:"chon",     mother:"matilde"  },
+    { child:"matilde",  father:"genaro",   mother:"jesusita" },
+    { child:"jesusita", father:null,       mother:"eusebia"  },
+    { child:"chon",     father:"lorenzop", mother:"goya"     },
+    { child:"gerardo",  father:"teodulo",  mother:"lupita"   },
+  ],
+  couples: [
+    { p1:"eric",     p2:"alma"     },
+    { p1:"gerardo",  p2:"alicia"   },
+    { p1:"sergio",   p2:"angelica" },
+    { p1:"abundio",  p2:"tomasa"   },
+    { p1:"chon",     p2:"matilde"  },
+    { p1:"genaro",   p2:"jesusita" },
+    { p1:"lorenzop", p2:"goya"     },
+    { p1:"teodulo",  p2:"lupita"   },
+  ]
+};
+
+// ── State ────────────────────────────────────────────────────
+let data          = null;
+let selected      = "eric";
+let focusRoot     = null;
+let authenticated = false;
+let pendingAction = null;
+let editingNodeId = null;
+let deletingNodeId= null;
+let pan           = { x: window.innerWidth/2, y: 140 };
+let zoom          = 0.85;
+let dragging      = false;
+let dragStart     = null;
+let positions     = {};
+let saveTimer     = null;
+
+// ── Firebase I/O ─────────────────────────────────────────────
+function showStatus(msg) {
+  const s = document.getElementById('status-bar');
+  s.textContent = msg; s.classList.add('show');
+}
+function hideStatus() { document.getElementById('status-bar').classList.remove('show'); }
+
+async function loadFromFirebase() {
+  showStatus('⏳ Cargando árbol desde la nube…');
+  try {
+    const snap = await getDoc(DOC_REF);
+    if (snap.exists()) {
+      data = snap.data();
+    } else {
+      // Primera vez — subir seed data
+      data = JSON.parse(JSON.stringify(SEED));
+      await setDoc(DOC_REF, data);
+    }
+  } catch(e) {
+    showToast('⚠️ Sin conexión — usando datos locales');
+    const local = localStorage.getItem('arbol_reyna_fb');
+    data = local ? JSON.parse(local) : JSON.parse(JSON.stringify(SEED));
+  }
+  hideStatus();
+  render();
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(persistData, 800);
+}
+
+async function persistData() {
+  // Always save locally as backup
+  localStorage.setItem('arbol_reyna_fb', JSON.stringify(data));
+  showStatus('☁️ Guardando en la nube…');
+  try {
+    await setDoc(DOC_REF, data);
+    hideStatus();
+  } catch(e) {
+    hideStatus();
+    showToast('⚠️ Error al guardar en la nube. Datos guardados localmente.');
+  }
+}
+
+// ── Tree helpers ─────────────────────────────────────────────
+function partnerOf(id) {
+  const c = data.couples.find(c => c.p1===id||c.p2===id);
+  return c ? (c.p1===id?c.p2:c.p1) : null;
+}
+function childrenOf(id) {
+  const p = partnerOf(id);
+  return data.relations
+    .filter(r=>r.father===id||r.mother===id||(p&&(r.father===p||r.mother===p)))
+    .map(r=>r.child).filter((v,i,a)=>a.indexOf(v)===i);
+}
+function parentsOf(id) {
+  const r = data.relations.find(r=>r.child===id);
+  return r ? [r.father,r.mother].filter(Boolean) : [];
+}
+function getAncestors(id, vis=new Set()) {
+  if (vis.has(id)) return new Set(); vis.add(id);
+  const res=new Set(), r=data.relations.find(r=>r.child===id);
+  if (r) [r.father,r.mother].filter(Boolean).forEach(p=>{ res.add(p); getAncestors(p,vis).forEach(a=>res.add(a)); });
+  return res;
+}
+function getDescendants(id, vis=new Set()) {
+  if (vis.has(id)) return new Set(); vis.add(id);
+  const res=new Set();
+  data.relations.filter(r=>r.father===id||r.mother===id).forEach(r=>{ res.add(r.child); getDescendants(r.child,vis).forEach(d=>res.add(d)); });
+  return res;
+}
+
+// ── Layout ───────────────────────────────────────────────────
+function buildLayout(rootId) {
+  const gen={};
+  gen[rootId]=0;
+  let q=[rootId];
+  while(q.length){ const c=q.shift(); parentsOf(c).forEach(p=>{ if(gen[p]===undefined){gen[p]=gen[c]-1;q.push(p);} }); }
+  q=[rootId]; const seen=new Set([rootId]);
+  while(q.length){ const c=q.shift(); childrenOf(c).forEach(ch=>{ if(!seen.has(ch)){seen.add(ch);if(gen[ch]===undefined)gen[ch]=gen[c]+1;q.push(ch);} }); }
+  let changed=true;
+  while(changed){ changed=false; data.couples.forEach(({p1,p2})=>{ if(gen[p1]!==undefined&&gen[p2]===undefined){gen[p2]=gen[p1];changed=true;} if(gen[p2]!==undefined&&gen[p1]===undefined){gen[p1]=gen[p2];changed=true;} }); }
+
+  const allIds=[...new Set(Object.keys(gen))];
+  const allGens=[...new Set(Object.values(gen))].sort((a,b)=>a-b);
+  const minGen=allGens[0];
+
+  function unitsForGen(g){
+    const ids=allIds.filter(id=>gen[id]===g), used=new Set(), units=[];
+    data.couples.forEach(({p1,p2})=>{ if(gen[p1]===g&&gen[p2]===g&&!used.has(p1)&&!used.has(p2)){units.push({type:'couple',ids:[p1,p2]});used.add(p1);used.add(p2);} });
+    ids.forEach(id=>{ if(!used.has(id)){units.push({type:'single',ids:[id]});used.add(id);} });
+    function pk(u){ const r=data.relations.find(r=>u.ids.includes(r.child)); return r?`${r.father||''}|${r.mother||''}`:`z_${u.ids[0]}`; }
+    units.sort((a,b)=>pk(a).localeCompare(pk(b)));
+    return units;
+  }
+  function unitW(u){ return u.type==='couple'?NODE_W*2+C_PAD:NODE_W; }
+  const pos={};
+  function placeUnit(u,cx,y){
+    if(u.type==='couple'){const[l,r]=u.ids;pos[l]={x:cx-NODE_W/2-C_PAD/2,y};pos[r]={x:cx+NODE_W/2+C_PAD/2,y};}
+    else pos[u.ids[0]]={x:cx,y};
+  }
+  allGens.forEach(g=>{
+    const rowY=(g-minGen)*(NODE_H_MIN+V_GAP), units=unitsForGen(g);
+    if(!units.length)return;
+    const cx=units.map(u=>{
+      const ch=u.ids.flatMap(id=>childrenOf(id)).filter(c=>pos[c]);
+      if(ch.length){const xs=ch.map(c=>pos[c].x);return(Math.min(...xs)+Math.max(...xs))/2;}
+      const pr=u.ids.flatMap(id=>parentsOf(id)).filter(p=>pos[p]);
+      if(pr.length){const xs=pr.map(p=>pos[p].x);return(Math.min(...xs)+Math.max(...xs))/2;}
+      return null;
+    });
+    const hasAny=cx.some(v=>v!==null);
+    if(!hasAny){const tw=units.reduce((s,u,i)=>s+unitW(u)+(i>0?H_GAP:0),0);let sx=-tw/2;units.forEach((u,i)=>{cx[i]=sx+unitW(u)/2;sx+=unitW(u)+H_GAP;});}
+    else{
+      for(let i=1;i<cx.length;i++)if(cx[i]===null)cx[i]=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+      for(let i=cx.length-2;i>=0;i--)if(cx[i]===null)cx[i]=cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
+    }
+    for(let i=1;i<units.length;i++){const mn=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;if(cx[i]<mn)cx[i]=mn;}
+    const ideals=cx.filter((_,i)=>{ const u=units[i]; return u.ids.flatMap(id=>childrenOf(id)).some(c=>pos[c])||u.ids.flatMap(id=>parentsOf(id)).some(p=>pos[p]); });
+    if(ideals.length){const im=(Math.min(...ideals)+Math.max(...ideals))/2,cm=(cx[0]+cx[cx.length-1])/2,sh=im-cm;for(let i=0;i<cx.length;i++)cx[i]+=sh;}
+    units.forEach((u,i)=>placeUnit(u,cx[i],rowY));
+  });
+  let ox=2000;
+  allIds.forEach(id=>{ if(!pos[id]){pos[id]={x:ox,y:(gen[id]-minGen)*(NODE_H_MIN+V_GAP)};ox+=NODE_W+H_GAP;} });
+  const xs=Object.values(pos).map(p=>p.x), midX=(Math.min(...xs)+Math.max(...xs))/2;
+  const result={};
+  allIds.forEach(id=>{ result[id]={x:pos[id].x-midX,y:pos[id].y,gen:gen[id]}; });
+  return result;
+}
+
+// ── Word wrap & card height ───────────────────────────────────
+function wrapName(name){
+  const words=(name||'').split(' '), lines=[]; let cur='';
+  words.forEach(w=>{ const t=cur?`${cur} ${w}`:w; if(t.length<=CHARS_LINE)cur=t; else{if(cur)lines.push(cur);cur=w;} });
+  if(cur)lines.push(cur);
+  return lines;
+}
+function cardH(name){ return Math.max(NODE_H_MIN, TOP_PAD+wrapName(name).length*LINE_H+YEAR_H+BOT_PAD); }
+
+// ── SVG helper ───────────────────────────────────────────────
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs={},text=''){
+  const e=document.createElementNS(NS,tag);
+  Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));
+  if(text)e.textContent=text;
+  return e;
+}
+
+// ── Viewport culling ─────────────────────────────────────────
+function isVisible(p){
+  const vw=window.innerWidth,vh=window.innerHeight;
+  return p.x>=(0-pan.x)/zoom-MARGIN && p.x<=(vw-pan.x)/zoom+MARGIN &&
+         p.y>=(0-pan.y)/zoom-MARGIN && p.y<=(vh-pan.y)/zoom+MARGIN;
+}
+
+// ── Render ───────────────────────────────────────────────────
+function render(){
+  if(!data)return;
+  positions=buildLayout(focusRoot||"eric");
+  const ancestors=selected?getAncestors(selected):new Set();
+  const descendants=selected?getDescendants(selected):new Set();
+  const partner=selected?partnerOf(selected):null;
+
+  const world=document.getElementById('world');
+  world.innerHTML='';
+  world.setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);
+
+  // connections
+  const conn=el('g');
+
+  // couples
+  data.couples.forEach(({p1,p2})=>{
+    const a=positions[p1],b=positions[p2]; if(!a||!b)return;
+    const L=a.x<=b.x?a:b, lid=a.x<=b.x?p1:p2, R=a.x<=b.x?b:a;
+    const x1=L.x+NODE_W/2,x2=R.x-NODE_W/2,mx=(x1+x2)/2,y=L.y+cardH(data.nodes[lid]?.name||'')/2;
+    conn.appendChild(el('line',{x1,y1:y,x2,y2:y,stroke:'#f59e0b','stroke-width':3}));
+    conn.appendChild(el('text',{x:mx,y:y+5,'text-anchor':'middle',style:'font-size:12px;fill:#fbbf24;pointer-events:none'},'♥'));
+  });
+
+  // parent-child
+  const pg={};
+  data.relations.forEach(({child,father,mother})=>{ const k=`${father||'x'}_${mother||'x'}`; if(!pg[k])pg[k]={father,mother,children:[]}; pg[k].children.push(child); });
+  Object.values(pg).forEach(({father,mother,children})=>{
+    const fp=father?positions[father]:null,mp=mother?positions[mother]:null;
+    let jx; if(fp&&mp)jx=(fp.x+mp.x)/2; else if(fp)jx=fp.x; else if(mp)jx=mp.x; else return;
+    const cwp=children.filter(c=>positions[c]); if(!cwp.length)return;
+    const fcp=positions[cwp[0]];
+    const pbY=fp?fp.y+cardH(data.nodes[father]?.name||''):mp.y+cardH(data.nodes[mother]?.name||'');
+    const jy=pbY+(fcp.y-pbY)*0.38;
+    if(fp){conn.appendChild(el('line',{x1:fp.x,y1:fp.y+cardH(data.nodes[father]?.name||''),x2:fp.x,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));if(fp.x!==jx)conn.appendChild(el('line',{x1:fp.x,y1:jy,x2:jx,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));}
+    if(mp){conn.appendChild(el('line',{x1:mp.x,y1:mp.y+cardH(data.nodes[mother]?.name||''),x2:mp.x,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));if(mp.x!==jx)conn.appendChild(el('line',{x1:mp.x,y1:jy,x2:jx,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));}
+    conn.appendChild(el('circle',{cx:jx,cy:jy,r:3.5,fill:'#60a5fa'}));
+    if(cwp.length>1){
+      cwp.sort((a,b)=>positions[a].x-positions[b].x);
+      const lx=positions[cwp[0]].x,rx=positions[cwp[cwp.length-1]].x,barY=jy+(fcp.y-jy)*0.55;
+      conn.appendChild(el('line',{x1:jx,y1:jy,x2:jx,y2:barY,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
+      conn.appendChild(el('line',{x1:lx,y1:barY,x2:rx,y2:barY,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
+      cwp.forEach(c=>{const cp=positions[c];conn.appendChild(el('line',{x1:cp.x,y1:barY,x2:cp.x,y2:cp.y,stroke:'#60a5fa','stroke-width':2,opacity:.9}));});
+    } else {
+      const cp=positions[cwp[0]];
+      conn.appendChild(el('line',{x1:jx,y1:jy,x2:cp.x,y2:cp.y,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
+    }
+  });
+
+  // siblings arc
+  Object.values(pg).forEach(({children})=>{
+    const wp=children.filter(id=>positions[id]); if(wp.length<2)return;
+    wp.sort((a,b)=>positions[a].x-positions[b].x);
+    for(let i=0;i<wp.length-1;i++){
+      const aP=positions[wp[i]],bP=positions[wp[i+1]],ax=aP.x+NODE_W/2,bx=bP.x-NODE_W/2;
+      const y=aP.y+cardH(data.nodes[wp[i]]?.name||'')+12,cy2=y+20;
+      conn.appendChild(el('path',{d:`M${ax},${y} Q${(ax+bx)/2},${cy2} ${bx},${y}`,fill:'none',stroke:'#34d399','stroke-width':1.5,'stroke-dasharray':'4,3',opacity:.7}));
+    }
+  });
+  world.appendChild(conn);
+
+  // nodes (culled)
+  Object.entries(positions).forEach(([id,pos])=>{
+    if(!isVisible(pos))return;
+    const node=data.nodes[id]; if(!node)return;
+    const lines=wrapName(node.name),ch=cardH(node.name),yearY=TOP_PAD+lines.length*LINE_H+14;
+    const isSel=id===selected;
+    let bg,border;
+    if(isSel){bg='#92400e';border='#facc15';}
+    else if(id===partner){bg='#1e3a5f';border='#60a5fa';}
+    else if(ancestors.has(id)){bg='#064e3b';border='#34d399';}
+    else if(descendants.has(id)){bg='#3b0764';border='#c084fc';}
+    else{bg=node.gender==='f'?'#2d1b45':'#1e2d45';border=node.gender==='f'?'#a855f7':'#3b82f6';}
+    const g=el('g',{transform:`translate(${pos.x-NODE_W/2},${pos.y})`,style:'cursor:pointer'});
+    g.dataset.nodeId=id;
+    const rect=el('rect',{width:NODE_W,height:ch,rx:8,fill:bg,stroke:border,'stroke-width':isSel?2.5:1.5});
+    if(isSel)rect.setAttribute('filter','url(#glow)');
+    g.appendChild(rect);
+    if(isSel)g.appendChild(el('rect',{width:NODE_W,height:ch,rx:8,fill:'none',stroke:'#facc15','stroke-width':1,opacity:.4}));
+    g.appendChild(el('text',{x:NODE_W-8,y:14,'text-anchor':'middle',style:`font-size:13px;fill:${node.gender==='f'?'#e879f9':'#60a5fa'};pointer-events:none`},node.gender==='f'?'♀':'♂'));
+    lines.forEach((line,i)=>g.appendChild(el('text',{x:NODE_W/2,y:TOP_PAD+i*LINE_H,'text-anchor':'middle',style:`font-size:11px;fill:${isSel?'#facc15':'#f9fafb'};font-weight:${isSel?'bold':'normal'};pointer-events:none`},line)));
+    g.appendChild(el('text',{x:NODE_W/2,y:yearY,'text-anchor':'middle',style:'font-size:11px;fill:#fbbf24;letter-spacing:1px;pointer-events:none'},node.year?`✦ ${node.year}`:'✦ —'));
+    g.addEventListener('click',()=>selectNode(id));
+    world.appendChild(g);
+  });
+}
+
+// ── Select & info panel ──────────────────────────────────────
+function selectNode(id){ selected=id; render(); openInfoPanel(id); updateZoomRight(); }
+
+function openInfoPanel(id){
+  const node=data.nodes[id]; if(!node)return;
+  document.getElementById('ip-gender').textContent=node.gender==='f'?'♀':'♂';
+  document.getElementById('ip-name').textContent=node.name;
+  document.getElementById('ip-year').textContent=node.year?`Nacido/a en ${node.year}`:'';
+  const rows=document.getElementById('ip-rows'); rows.innerHTML='';
+  const p=partnerOf(id);
+  if(p&&data.nodes[p])addRow(rows,'Pareja',data.nodes[p].name,'#c0a0e0');
+  const rel=data.relations.find(r=>r.child===id);
+  if(rel){if(rel.father&&data.nodes[rel.father])addRow(rows,'Padre',data.nodes[rel.father].name);if(rel.mother&&data.nodes[rel.mother])addRow(rows,'Madre',data.nodes[rel.mother].name);}
+  const kids=data.relations.filter(r=>r.father===id||r.mother===id);
+  if(kids.length)addRow(rows,'Hijos',kids.map(r=>data.nodes[r.child]?.name).filter(Boolean).join(', '));
+  if(rel){const sibs=data.relations.filter(r=>r.child!==id&&((rel.father&&r.father===rel.father)||(rel.mother&&r.mother===rel.mother)));if(sibs.length)addRow(rows,'Hermanos',sibs.map(r=>data.nodes[r.child]?.name).filter(Boolean).join(', '));}
+  addRow(rows,'Ancestros',`${getAncestors(id).size} personas`,'#34d399');
+  addRow(rows,'Descendientes',`${getDescendants(id).size} personas`,'#c084fc');
+  document.getElementById('info-panel').classList.add('open');
+  updateZoomRight();
+}
+function addRow(c,label,value,color){
+  const d=document.createElement('div');d.className='info-row';
+  const l=document.createElement('div');l.className='info-row-label';l.textContent=label;
+  const v=document.createElement('div');v.className='info-row-value';v.textContent=value;
+  if(color)v.style.color=color;
+  d.appendChild(l);d.appendChild(v);c.appendChild(d);
+}
+function closeInfoPanel(){ document.getElementById('info-panel').classList.remove('open'); updateZoomRight(); }
+function updateZoomRight(){ document.getElementById('zoom-controls').style.right=document.getElementById('info-panel').classList.contains('open')?'320px':'20px'; }
+
+// ── Auth ─────────────────────────────────────────────────────
+function requireAuth(action){ if(authenticated){action();return;} pendingAction=action; openModal('modal-auth'); document.getElementById('auth-input').value=''; document.getElementById('auth-error').style.display='none'; setTimeout(()=>document.getElementById('auth-input').focus(),50); }
+function doAuth(){
+  if(document.getElementById('auth-input').value===PASSWORD){
+    authenticated=true; closeModal('modal-auth'); updateAuthBtn();
+    if(pendingAction){const a=pendingAction;pendingAction=null;a();}
+  } else { const e=document.getElementById('auth-error');e.textContent='Contraseña incorrecta';e.style.display='block'; }
+}
+function updateAuthBtn(){
+  const btn=document.getElementById('btn-auth');
+  const exp=document.getElementById('btn-export');
+  const imp=document.getElementById('btn-import');
+  if(authenticated){btn.textContent='🔓 Editor';btn.className='btn btn-auth-on';exp.style.display='';imp.style.display='';}
+  else{btn.textContent='🔒 Editar';btn.className='btn btn-auth-off';exp.style.display='none';imp.style.display='none';}
+}
+
+// ── Add ──────────────────────────────────────────────────────
+function openAddModal(){
+  requireAuth(()=>{
+    const sel=document.getElementById('add-related');sel.innerHTML='';
+    Object.values(data.nodes).sort((a,b)=>a.name.localeCompare(b.name)).forEach(n=>{ const o=document.createElement('option');o.value=n.id;o.textContent=n.name;if(n.id===selected)o.selected=true;sel.appendChild(o); });
+    document.getElementById('add-name').value='';document.getElementById('add-year').value='';document.getElementById('add-gender').value='m';document.getElementById('add-relation').value='child';
+    openModal('modal-add');
+  });
+}
+function doAddSave(){
+  const name=document.getElementById('add-name').value.trim();if(!name)return;
+  const id='node_'+Date.now(),gender=document.getElementById('add-gender').value,year=document.getElementById('add-year').value.trim()||null;
+  const ref=document.getElementById('add-related').value,rel=document.getElementById('add-relation').value;
+  data.nodes[id]={id,name,year,gender,photo:null,birthplace:null};
+  if(rel==='child'){const p=partnerOf(ref);if(data.nodes[ref]?.gender==='m')data.relations.push({child:id,father:ref,mother:p});else data.relations.push({child:id,father:p,mother:ref});}
+  else if(rel==='parent'){const ex=data.relations.find(r=>r.child===ref);if(gender==='m'){if(ex)ex.father=id;else data.relations.push({child:ref,father:id,mother:null});}else{if(ex)ex.mother=id;else data.relations.push({child:ref,father:null,mother:id});}}
+  else if(rel==='sibling'){const ex=data.relations.find(r=>r.child===ref);if(ex)data.relations.push({child:id,father:ex.father,mother:ex.mother});}
+  else if(rel==='partner')data.couples.push({p1:ref,p2:id});
+  scheduleSave();closeModal('modal-add');render();showToast(`✅ ${name} añadido/a`);
+}
+
+// ── Edit ─────────────────────────────────────────────────────
+function openEditModal(id){
+  requireAuth(()=>{
+    editingNodeId=id;const n=data.nodes[id];
+    document.getElementById('edit-name').value=n.name||'';document.getElementById('edit-year').value=n.year||'';document.getElementById('edit-birthplace').value=n.birthplace||'';document.getElementById('edit-gender').value=n.gender||'m';
+    openModal('modal-edit');
+  });
+}
+function doEditSave(){
+  if(!editingNodeId)return;
+  const n=data.nodes[editingNodeId];
+  n.name=document.getElementById('edit-name').value.trim()||n.name;
+  n.year=document.getElementById('edit-year').value.trim()||null;
+  n.birthplace=document.getElementById('edit-birthplace').value.trim()||null;
+  n.gender=document.getElementById('edit-gender').value;
+  scheduleSave();closeModal('modal-edit');render();if(selected===editingNodeId)openInfoPanel(editingNodeId);showToast('✅ Datos actualizados');
+}
+
+// ── Delete ───────────────────────────────────────────────────
+function openDeleteModal(id){ requireAuth(()=>{ deletingNodeId=id;document.getElementById('delete-name').textContent=data.nodes[id]?.name||'';openModal('modal-delete'); }); }
+function doDelete(){
+  if(!deletingNodeId)return;const id=deletingNodeId;
+  delete data.nodes[id];
+  data.relations=data.relations.filter(r=>r.child!==id).map(r=>({...r,father:r.father===id?null:r.father,mother:r.mother===id?null:r.mother}));
+  data.couples=data.couples.filter(c=>c.p1!==id&&c.p2!==id);
+  if(selected===id){selected='eric';closeInfoPanel();}
+  scheduleSave();closeModal('modal-delete');render();showToast('🗑 Persona eliminada');
+}
+
+// ── Export / Import ──────────────────────────────────────────
+function doExport(){
+  requireAuth(()=>{
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download='arbol_reyna_elizondo.json';a.click();URL.revokeObjectURL(url);
+    showToast('⬇ Datos exportados');
+  });
+}
+function doImport(){ requireAuth(()=>document.getElementById('import-file').click()); }
+document.getElementById('import-file').addEventListener('change',function(){
+  const file=this.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const parsed=JSON.parse(e.target.result);
+      if(!parsed.nodes||!parsed.relations||!parsed.couples)throw new Error();
+      data=parsed;scheduleSave();render();showToast('⬆ Datos importados y guardados en la nube');
+    }catch{showToast('❌ Archivo JSON inválido');}
+  };
+  reader.readAsText(file);this.value='';
+});
+
+// ── Modals ───────────────────────────────────────────────────
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+// ── Toast ────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
+
+// ── Pan / Zoom ───────────────────────────────────────────────
+const canvas=document.getElementById('canvas');
+canvas.addEventListener('mousedown',e=>{ if(e.target.closest('[data-node-id]'))return;dragging=true;dragStart={x:e.clientX-pan.x,y:e.clientY-pan.y};canvas.classList.add('dragging'); });
+window.addEventListener('mousemove',e=>{ if(!dragging)return;pan={x:e.clientX-dragStart.x,y:e.clientY-dragStart.y};document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`); });
+window.addEventListener('mouseup',()=>{dragging=false;canvas.classList.remove('dragging');});
+canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(2,Math.max(0.2,zoom-e.deltaY*0.001));document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);},{passive:false});
+let lastTouch=null;
+canvas.addEventListener('touchstart',e=>{if(e.touches.length===1)lastTouch={x:e.touches[0].clientX-pan.x,y:e.touches[0].clientY-pan.y};});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length===1&&lastTouch){pan={x:e.touches[0].clientX-lastTouch.x,y:e.touches[0].clientY-lastTouch.y};document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`); }},{passive:false});
+canvas.addEventListener('touchend',()=>lastTouch=null);
+document.getElementById('btn-zoom-in').onclick  =()=>{zoom=Math.min(2,zoom+0.1);render();};
+document.getElementById('btn-zoom-out').onclick =()=>{zoom=Math.max(0.2,zoom-0.1);render();};
+document.getElementById('btn-zoom-home').onclick=()=>{zoom=0.85;pan={x:window.innerWidth/2,y:140};render();};
+
+// ── Button wiring ────────────────────────────────────────────
+document.getElementById('btn-add').onclick    =openAddModal;
+document.getElementById('btn-auth').onclick   =()=>requireAuth(()=>showToast('🔓 Modo editor activo'));
+document.getElementById('btn-export').onclick =doExport;
+document.getElementById('btn-import').onclick =doImport;
+document.getElementById('btn-full').onclick   =()=>{focusRoot=null;document.getElementById('btn-full').style.display='none';render();};
+document.getElementById('info-close').onclick  =closeInfoPanel;
+document.getElementById('ip-btn-focus').onclick=()=>{focusRoot=selected;document.getElementById('btn-full').style.display='';render();};
+document.getElementById('ip-btn-edit').onclick =()=>openEditModal(selected);
+document.getElementById('ip-btn-delete').onclick=()=>openDeleteModal(selected);
+document.getElementById('auth-ok').onclick    =doAuth;
+document.getElementById('auth-cancel').onclick=()=>closeModal('modal-auth');
+document.getElementById('auth-input').addEventListener('keydown',e=>{if(e.key==='Enter')doAuth();});
+document.getElementById('edit-save').onclick  =doEditSave;
+document.getElementById('edit-cancel').onclick=()=>closeModal('modal-edit');
+document.getElementById('add-save').onclick   =doAddSave;
+document.getElementById('add-cancel').onclick =()=>closeModal('modal-add');
+document.getElementById('delete-confirm').onclick=doDelete;
+document.getElementById('delete-cancel').onclick =()=>closeModal('modal-delete');
+
+// ── Init ─────────────────────────────────────────────────────
+loadFromFirebase();
+
+</script>
+</body>
+</html>
