@@ -392,89 +392,214 @@ function getDescendants(id, vis=new Set()) {
   return res;
 }
 
+// ── Subárbol visible para "Ver árbol desde aquí" ─────────────
+function getSubtreeIds(rootId) {
+  // Includes: rootId + partner, all ancestors, all descendants, their partners
+  const ids = new Set([rootId]);
+  const partner = partnerOf(rootId);
+  if (partner) ids.add(partner);
+  getAncestors(rootId).forEach(id => {
+    ids.add(id);
+    const p = partnerOf(id); if (p) ids.add(p);
+  });
+  getDescendants(rootId).forEach(id => {
+    ids.add(id);
+    const p = partnerOf(id); if (p) ids.add(p);
+  });
+  // Also include partner's ancestors (in-laws)
+  if (partner) {
+    getAncestors(partner).forEach(id => {
+      ids.add(id);
+      const p = partnerOf(id); if (p) ids.add(p);
+    });
+  }
+  return ids;
+}
+
 // ── Layout ───────────────────────────────────────────────────
-function buildLayout(rootId) {
+function buildLayout(rootId, visibleIds) {
+  const nodeIds = visibleIds
+    ? Object.keys(data.nodes).filter(id => visibleIds.has(id))
+    : Object.keys(data.nodes);
+
+  // ── STEP 1: assign generations ──────────────────────────────
   const gen={};
   gen[rootId]=0;
   let q=[rootId];
-  while(q.length){ const c=q.shift(); parentsOf(c).forEach(p=>{ if(gen[p]===undefined){gen[p]=gen[c]-1;q.push(p);} }); }
+  while(q.length){ const c=q.shift(); parentsOf(c).forEach(p=>{ if(gen[p]===undefined&&(!visibleIds||visibleIds.has(p))){gen[p]=gen[c]-1;q.push(p);} }); }
   q=[rootId]; const seen=new Set([rootId]);
-  while(q.length){ const c=q.shift(); childrenOf(c).forEach(ch=>{ if(!seen.has(ch)){seen.add(ch);if(gen[ch]===undefined)gen[ch]=gen[c]+1;q.push(ch);} }); }
-  // Partners inherit same generation
+  while(q.length){ const c=q.shift(); childrenOf(c).forEach(ch=>{ if(!seen.has(ch)&&(!visibleIds||visibleIds.has(ch))){seen.add(ch);if(gen[ch]===undefined)gen[ch]=gen[c]+1;q.push(ch);} }); }
   let changed=true;
-  while(changed){ changed=false; data.couples.forEach(({p1,p2})=>{ if(gen[p1]!==undefined&&gen[p2]===undefined){gen[p2]=gen[p1];changed=true;} if(gen[p2]!==undefined&&gen[p1]===undefined){gen[p1]=gen[p2];changed=true;} }); }
-
-  // ── FIX: assign any node not yet reached via BFS ──
-  // Nodes added as siblings/children of nodes already in tree may share
-  // a parent that IS in gen, so we can derive their generation from relations.
-  // Repeat until stable.
+  while(changed){ changed=false; data.couples.forEach(({p1,p2})=>{
+    if((!visibleIds||visibleIds.has(p1))&&(!visibleIds||visibleIds.has(p2))){
+      if(gen[p1]!==undefined&&gen[p2]===undefined){gen[p2]=gen[p1];changed=true;}
+      if(gen[p2]!==undefined&&gen[p1]===undefined){gen[p1]=gen[p2];changed=true;}
+    }
+  }); }
   changed=true;
   while(changed){
     changed=false;
-    Object.keys(data.nodes).forEach(id=>{
+    nodeIds.forEach(id=>{
       if(gen[id]!==undefined)return;
-      // try via parent relation
       const rel=data.relations.find(r=>r.child===id);
       if(rel){
-        const pg=[rel.father,rel.mother].filter(Boolean).find(p=>gen[p]!==undefined);
+        const pg=[rel.father,rel.mother].filter(Boolean).find(p=>gen[p]!==undefined&&(!visibleIds||visibleIds.has(p)));
         if(pg!==undefined){gen[id]=gen[pg]+1;changed=true;return;}
       }
-      // try via child relation (parent of known child)
       const asParent=data.relations.find(r=>(r.father===id||r.mother===id)&&gen[r.child]!==undefined);
       if(asParent){gen[id]=gen[asParent.child]-1;changed=true;return;}
-      // try via partner
       const cp=data.couples.find(c=>c.p1===id||c.p2===id);
       if(cp){const other=cp.p1===id?cp.p2:cp.p1;if(gen[other]!==undefined){gen[id]=gen[other];changed=true;}}
     });
   }
-  // Any still-unknown nodes: place at generation 0
-  Object.keys(data.nodes).forEach(id=>{ if(gen[id]===undefined)gen[id]=0; });
+  nodeIds.forEach(id=>{ if(gen[id]===undefined)gen[id]=0; });
 
-  const allIds=Object.keys(data.nodes);
-  const allGens=[...new Set(Object.values(gen))].sort((a,b)=>a-b);
-  const minGen=allGens[0];
+  const allIds  = nodeIds;
+  const allGens = [...new Set(Object.values(gen))].sort((a,b)=>a-b);
+  const minGen  = allGens[0];
+
+  // ── STEP 2: build units per generation ──────────────────────
+  // A unit = couple or single. Units are the atoms of placement.
+  const pos={};
 
   function unitsForGen(g){
     const ids=allIds.filter(id=>gen[id]===g), used=new Set(), units=[];
-    data.couples.forEach(({p1,p2})=>{ if(gen[p1]===g&&gen[p2]===g&&!used.has(p1)&&!used.has(p2)){units.push({type:'couple',ids:[p1,p2]});used.add(p1);used.add(p2);} });
+    data.couples.forEach(({p1,p2})=>{
+      if(gen[p1]===g&&gen[p2]===g&&!used.has(p1)&&!used.has(p2)&&ids.includes(p1)&&ids.includes(p2)){
+        const xp1 = parentsMidX(p1);
+        const xp2 = parentsMidX(p2);
+        const left  = (xp2 !== null && (xp1 === null || xp2 < xp1)) ? p2 : p1;
+        const right = left === p1 ? p2 : p1;
+        units.push({type:'couple', ids:[left, right]});
+        used.add(p1); used.add(p2);
+      }
+    });
     ids.forEach(id=>{ if(!used.has(id)){units.push({type:'single',ids:[id]});used.add(id);} });
-    function pk(u){ const r=data.relations.find(r=>u.ids.includes(r.child)); return r?`${r.father||''}|${r.mother||''}`:`z_${u.ids[0]}`; }
-    units.sort((a,b)=>pk(a).localeCompare(pk(b)));
     return units;
   }
-  function unitW(u){ return u.type==='couple'?NODE_W*2+C_PAD:NODE_W; }
-  const pos={};
-  function placeUnit(u,cx,y){
-    if(u.type==='couple'){const[l,r]=u.ids;pos[l]={x:cx-NODE_W/2-C_PAD/2,y};pos[r]={x:cx+NODE_W/2+C_PAD/2,y};}
-    else pos[u.ids[0]]={x:cx,y};
+
+  // midX of a node's already-placed parents
+  function parentsMidX(id){
+    const pr = parentsOf(id).filter(p => pos[p] && (!visibleIds||visibleIds.has(p)));
+    if(!pr.length) return null;
+    const xs = pr.map(p => pos[p].x);
+    return (Math.min(...xs)+Math.max(...xs))/2;
   }
-  allGens.forEach(g=>{
-    const rowY=(g-minGen)*(NODE_H_MIN+V_GAP), units=unitsForGen(g);
-    if(!units.length)return;
-    const cx=units.map(u=>{
-      const ch=u.ids.flatMap(id=>childrenOf(id)).filter(c=>pos[c]);
-      if(ch.length){const xs=ch.map(c=>pos[c].x);return(Math.min(...xs)+Math.max(...xs))/2;}
-      const pr=u.ids.flatMap(id=>parentsOf(id)).filter(p=>pos[p]);
-      if(pr.length){const xs=pr.map(p=>pos[p].x);return(Math.min(...xs)+Math.max(...xs))/2;}
-      return null;
-    });
-    const hasAny=cx.some(v=>v!==null);
-    if(!hasAny){const tw=units.reduce((s,u,i)=>s+unitW(u)+(i>0?H_GAP:0),0);let sx=-tw/2;units.forEach((u,i)=>{cx[i]=sx+unitW(u)/2;sx+=unitW(u)+H_GAP;});}
-    else{
-      for(let i=1;i<cx.length;i++)if(cx[i]===null)cx[i]=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
-      for(let i=cx.length-2;i>=0;i--)if(cx[i]===null)cx[i]=cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
+
+  function unitW(u){ return u.type==='couple' ? NODE_W*2+C_PAD : NODE_W; }
+
+  // Ideal X for a unit = midpoint of ALL its members' parents
+  function idealX(u){
+    const pr=u.ids.flatMap(id=>parentsOf(id)).filter(p=>pos[p]&&(!visibleIds||visibleIds.has(p)));
+    if(pr.length){ const xs=pr.map(p=>pos[p].x); return (Math.min(...xs)+Math.max(...xs))/2; }
+    return null;
+  }
+
+  function placeUnit(u, cx, y){
+    if(u.type==='couple'){
+      const [l, r] = u.ids;
+      pos[l] = {x: cx - NODE_W/2 - C_PAD/2, y};
+      pos[r] = {x: cx + NODE_W/2 + C_PAD/2, y};
+    } else {
+      pos[u.ids[0]] = {x: cx, y};
     }
-    for(let i=1;i<units.length;i++){const mn=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;if(cx[i]<mn)cx[i]=mn;}
-    const ideals=cx.filter((_,i)=>{ const u=units[i]; return u.ids.flatMap(id=>childrenOf(id)).some(c=>pos[c])||u.ids.flatMap(id=>parentsOf(id)).some(p=>pos[p]); });
-    if(ideals.length){const im=(Math.min(...ideals)+Math.max(...ideals))/2,cm=(cx[0]+cx[cx.length-1])/2,sh=im-cm;for(let i=0;i<cx.length;i++)cx[i]+=sh;}
-    units.forEach((u,i)=>placeUnit(u,cx[i],rowY));
+  }
+
+  // ── STEP 3: place each generation top-down ───────────────────
+  // Sort units within each row by the X of their parents so that
+  // children of left-side parents appear on the left, etc.
+  allGens.forEach(g => {
+    const rowY  = (g - minGen) * (NODE_H_MIN + V_GAP);
+    const units = unitsForGen(g);
+    if(!units.length) return;
+
+    // Sort units by ideal parent X (nulls go to end)
+    units.sort((a,b) => {
+      const ia = idealX(a);
+      const ib = idealX(b);
+      if(ia===null && ib===null) return 0;
+      if(ia===null) return 1;
+      if(ib===null) return -1;
+      return ia - ib;
+    });
+
+    // Assign initial cx = ideal parent X, or null
+    const cx = units.map(u => idealX(u));
+
+    // Fill nulls by spacing from neighbours
+    const hasAny = cx.some(v => v !== null);
+    if(!hasAny){
+      const tw = units.reduce((s,u,i) => s+unitW(u)+(i>0?H_GAP:0), 0);
+      let sx = -tw/2;
+      units.forEach((u,i) => { cx[i]=sx+unitW(u)/2; sx+=unitW(u)+H_GAP; });
+    } else {
+      // Forward fill
+      for(let i=1;i<cx.length;i++)
+        if(cx[i]===null)
+          cx[i]=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+      // Backward fill
+      for(let i=cx.length-2;i>=0;i--)
+        if(cx[i]===null)
+          cx[i]=cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
+    }
+
+    // ── Forward pass: enforce minimum spacing left→right ──
+    for(let i=1;i<units.length;i++){
+      const minCx = cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+      if(cx[i]<minCx) cx[i]=minCx;
+    }
+
+    // ── Backward pass: pull right units left toward their ideal
+    //    without violating the unit to their right ──
+    for(let i=cx.length-2;i>=0;i--){
+      const ideal = idealX(units[i]);
+      if(ideal===null) continue;
+      const maxCx = cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
+      cx[i] = Math.min(cx[i], Math.max(ideal, cx[i]-0)); // don't move right
+      if(cx[i]>maxCx) cx[i]=maxCx;
+      // Also don't violate left neighbour
+      if(i>0){
+        const minCx2=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+        if(cx[i]<minCx2) cx[i]=minCx2;
+      }
+    }
+
+    // ── Pull-to-parents refinement: 3 iterations of nudging
+    //    each unit toward its ideal X while keeping min spacing ──
+    for(let iter=0;iter<3;iter++){
+      // Left to right
+      for(let i=0;i<units.length;i++){
+        const ideal = idealX(units[i]);
+        if(ideal===null) continue;
+        let target = ideal;
+        // Clamp within neighbours
+        if(i>0) target=Math.max(target, cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
+        if(i<cx.length-1) target=Math.min(target, cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
+        if(target >= cx[i] - 0.1) cx[i]=target; // only pull, don't push right
+      }
+      // Right to left
+      for(let i=cx.length-1;i>=0;i--){
+        const ideal = idealX(units[i]);
+        if(ideal===null) continue;
+        let target = ideal;
+        if(i>0) target=Math.max(target, cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
+        if(i<cx.length-1) target=Math.min(target, cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
+        cx[i]=target;
+      }
+    }
+
+    units.forEach((u,i) => placeUnit(u, cx[i], rowY));
   });
-  // Any still-unpositioned nodes (shouldn't happen now, but safety net)
+
+  // Safety net for unpositioned nodes
   let ox=2000;
   allIds.forEach(id=>{ if(!pos[id]){pos[id]={x:ox,y:(gen[id]-minGen)*(NODE_H_MIN+V_GAP)};ox+=NODE_W+H_GAP;} });
-  const xs=Object.values(pos).map(p=>p.x), midX=(Math.min(...xs)+Math.max(...xs))/2;
+
+  // Center around x=0
+  const xs=Object.values(pos).map(p=>p.x);
+  const midX=(Math.min(...xs)+Math.max(...xs))/2;
   const result={};
-  allIds.forEach(id=>{ result[id]={x:pos[id].x-midX,y:pos[id].y,gen:gen[id]}; });
+  allIds.forEach(id=>{ result[id]={x:pos[id].x-midX, y:pos[id].y, gen:gen[id]}; });
   return result;
 }
 
@@ -506,7 +631,8 @@ function isVisible(p){
 // ── Render ───────────────────────────────────────────────────
 function render(){
   if(!data)return;
-  positions=buildLayout(focusRoot||"eric");
+  const visibleIds = focusRoot ? getSubtreeIds(focusRoot) : null;
+  positions=buildLayout(focusRoot||"eric", visibleIds);
   const ancestors=selected?getAncestors(selected):new Set();
   const descendants=selected?getDescendants(selected):new Set();
   const partner=selected?partnerOf(selected):null;
@@ -518,7 +644,7 @@ function render(){
   // connections
   const conn=el('g');
 
-  // couples
+  // couples — only draw if both nodes are visible
   data.couples.forEach(({p1,p2})=>{
     const a=positions[p1],b=positions[p2]; if(!a||!b)return;
     const L=a.x<=b.x?a:b, lid=a.x<=b.x?p1:p2, R=a.x<=b.x?b:a;
@@ -527,28 +653,113 @@ function render(){
     conn.appendChild(el('text',{x:mx,y:y+5,'text-anchor':'middle',style:'font-size:12px;fill:#fbbf24;pointer-events:none'},'♥'));
   });
 
-  // parent-child
+  // parent-child — each family drawn independently, no shared bars
   const pg={};
-  data.relations.forEach(({child,father,mother})=>{ const k=`${father||'x'}_${mother||'x'}`; if(!pg[k])pg[k]={father,mother,children:[]}; pg[k].children.push(child); });
+  data.relations.forEach(({child,father,mother})=>{
+    const k=`${father||'x'}_${mother||'x'}`;
+    if(!pg[k])pg[k]={father,mother,children:[]};
+    pg[k].children.push(child);
+  });
+
   Object.values(pg).forEach(({father,mother,children})=>{
-    const fp=father?positions[father]:null,mp=mother?positions[mother]:null;
-    let jx; if(fp&&mp)jx=(fp.x+mp.x)/2; else if(fp)jx=fp.x; else if(mp)jx=mp.x; else return;
-    const cwp=children.filter(c=>positions[c]); if(!cwp.length)return;
-    const fcp=positions[cwp[0]];
-    const pbY=fp?fp.y+cardH(data.nodes[father]?.name||''):mp.y+cardH(data.nodes[mother]?.name||'');
-    const jy=pbY+(fcp.y-pbY)*0.38;
-    if(fp){conn.appendChild(el('line',{x1:fp.x,y1:fp.y+cardH(data.nodes[father]?.name||''),x2:fp.x,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));if(fp.x!==jx)conn.appendChild(el('line',{x1:fp.x,y1:jy,x2:jx,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));}
-    if(mp){conn.appendChild(el('line',{x1:mp.x,y1:mp.y+cardH(data.nodes[mother]?.name||''),x2:mp.x,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));if(mp.x!==jx)conn.appendChild(el('line',{x1:mp.x,y1:jy,x2:jx,y2:jy,stroke:'#60a5fa','stroke-width':2,opacity:.9}));}
-    conn.appendChild(el('circle',{cx:jx,cy:jy,r:3.5,fill:'#60a5fa'}));
-    if(cwp.length>1){
-      cwp.sort((a,b)=>positions[a].x-positions[b].x);
-      const lx=positions[cwp[0]].x,rx=positions[cwp[cwp.length-1]].x,barY=jy+(fcp.y-jy)*0.55;
-      conn.appendChild(el('line',{x1:jx,y1:jy,x2:jx,y2:barY,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
-      conn.appendChild(el('line',{x1:lx,y1:barY,x2:rx,y2:barY,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
-      cwp.forEach(c=>{const cp=positions[c];conn.appendChild(el('line',{x1:cp.x,y1:barY,x2:cp.x,y2:cp.y,stroke:'#60a5fa','stroke-width':2,opacity:.9}));});
+    const fp = father ? positions[father] : null;
+    const mp = mother ? positions[mother] : null;
+    if(!fp && !mp) return;
+
+    const cwp = children.filter(c => positions[c]);
+    if(!cwp.length) return;
+
+    cwp.sort((a,b) => positions[a].x - positions[b].x);
+
+    const fH = fp ? cardH(data.nodes[father]?.name||'') : 0;
+    const mH = mp ? cardH(data.nodes[mother]?.name||'') : 0;
+
+    // Parent bottom Y (use whichever parent exists, prefer father)
+    const parentBottomY = fp ? fp.y + fH : mp.y + mH;
+
+    // jx = midpoint between the two parents, clamped to sit between them
+    // This is the "family spine" X — parents connect horizontally to it
+    const jx = fp && mp
+      ? (fp.x + mp.x) / 2
+      : fp ? fp.x : mp.x;
+
+    const minChildY = Math.min(...cwp.map(c => positions[c].y));
+    const jy   = parentBottomY + (minChildY - parentBottomY) * 0.35;
+    const barY  = parentBottomY + (minChildY - parentBottomY) * 0.72;
+
+    // ── Father: vertical down to jy ──
+    if(fp){
+      conn.appendChild(el('line',{
+        x1:fp.x, y1:fp.y+fH,
+        x2:fp.x, y2:jy,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
+      // Horizontal from father to jx
+      if(Math.abs(fp.x - jx) > 0.5){
+        conn.appendChild(el('line',{
+          x1:fp.x, y1:jy, x2:jx, y2:jy,
+          stroke:'#60a5fa','stroke-width':2,opacity:.9
+        }));
+      }
+    }
+
+    // ── Mother: vertical down to jy ──
+    if(mp){
+      conn.appendChild(el('line',{
+        x1:mp.x, y1:mp.y+mH,
+        x2:mp.x, y2:jy,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
+      // Horizontal from mother to jx
+      if(Math.abs(mp.x - jx) > 0.5){
+        conn.appendChild(el('line',{
+          x1:mp.x, y1:jy, x2:jx, y2:jy,
+          stroke:'#60a5fa','stroke-width':2,opacity:.9
+        }));
+      }
+    }
+
+    // Junction dot
+    conn.appendChild(el('circle',{cx:jx, cy:jy, r:3.5, fill:'#60a5fa'}));
+
+    if(cwp.length === 1){
+      // Single child: spine goes straight down from jx to child
+      const cp = positions[cwp[0]];
+      conn.appendChild(el('line',{
+        x1:jx, y1:jy, x2:jx, y2:barY,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
+      // Then angled/straight line to child center
+      conn.appendChild(el('line',{
+        x1:jx, y1:barY, x2:cp.x, y2:cp.y,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
     } else {
-      const cp=positions[cwp[0]];
-      conn.appendChild(el('line',{x1:jx,y1:jy,x2:cp.x,y2:cp.y,stroke:'#60a5fa','stroke-width':2,opacity:.9}));
+      // Multiple children:
+      // 1. Spine goes down from jx to barY
+      conn.appendChild(el('line',{
+        x1:jx, y1:jy, x2:jx, y2:barY,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
+      // 2. For each child, draw a line from (child.x, barY) up to barY
+      //    and only span the bar between the LEFTMOST and RIGHTMOST of THIS family's children
+      const lx = positions[cwp[0]].x;
+      const rx = positions[cwp[cwp.length-1]].x;
+      // Clamp bar so it never extends beyond children
+      const barLx = Math.min(lx, jx);
+      const barRx = Math.max(rx, jx);
+      conn.appendChild(el('line',{
+        x1:barLx, y1:barY, x2:barRx, y2:barY,
+        stroke:'#60a5fa','stroke-width':2,opacity:.9
+      }));
+      // 3. Drop from bar to each child
+      cwp.forEach(c => {
+        const cp = positions[c];
+        conn.appendChild(el('line',{
+          x1:cp.x, y1:barY, x2:cp.x, y2:cp.y,
+          stroke:'#60a5fa','stroke-width':2,opacity:.9
+        }));
+      });
     }
   });
 
@@ -591,7 +802,12 @@ function render(){
 }
 
 // ── Select & info panel ──────────────────────────────────────
-function selectNode(id){ selected=id; render(); openInfoPanel(id); updateZoomRight(); }
+function selectNode(id){
+  selected=id;
+  render();
+  openInfoPanel(id);
+  updateZoomRight();
+}
 
 function openInfoPanel(id){
   const node=data.nodes[id]; if(!node)return;
@@ -619,7 +835,12 @@ function addRow(c,label,value,color){
   d.appendChild(l);d.appendChild(v);c.appendChild(d);
 }
 function closeInfoPanel(){ document.getElementById('info-panel').classList.remove('open'); updateZoomRight(); }
-function updateZoomRight(){ document.getElementById('zoom-controls').style.right=document.getElementById('info-panel').classList.contains('open')?'320px':'20px'; }
+function updateZoomRight(){
+  const open = document.getElementById('info-panel').classList.contains('open');
+  const mobile = window.innerWidth <= 480;
+  // On mobile the panel is full-width, so don't shift zoom controls
+  document.getElementById('zoom-controls').style.right = (open && !mobile) ? '320px' : '12px';
+}
 
 // ── Auth ─────────────────────────────────────────────────────
 function requireAuth(action){ if(authenticated){action();return;} pendingAction=action; openModal('modal-auth'); document.getElementById('auth-input').value=''; document.getElementById('auth-error').style.display='none'; setTimeout(()=>document.getElementById('auth-input').focus(),50); }
@@ -728,43 +949,58 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(2,Math.max(
 
 // Touch: pan (1 finger) + pinch-to-zoom (2 fingers)
 let lastTouches = null;
+let touchStartPos = null;
+let touchMoved = false;
+
 function getTouchMid(t){ return { x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2 }; }
 function getTouchDist(t){ const dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY; return Math.hypot(dx,dy); }
 
 canvas.addEventListener('touchstart',e=>{
   e.preventDefault();
   lastTouches = e.touches;
+  touchMoved = false;
+  if(e.touches.length===1){
+    touchStartPos = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+  }
 },{passive:false});
 
 canvas.addEventListener('touchmove',e=>{
   e.preventDefault();
   const t = e.touches;
   if(t.length===1 && lastTouches){
-    // single finger pan
     const dx=t[0].clientX-lastTouches[0].clientX;
     const dy=t[0].clientY-lastTouches[0].clientY;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) touchMoved=true;
     pan={x:pan.x+dx, y:pan.y+dy};
     document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);
   } else if(t.length===2 && lastTouches && lastTouches.length===2){
-    // two finger pinch-zoom + pan
-    const newDist = getTouchDist(t);
-    const oldDist = getTouchDist(lastTouches);
-    const newMid  = getTouchMid(t);
-    const oldMid  = getTouchMid(lastTouches);
-    const scale   = newDist / oldDist;
-    const newZoom = Math.min(2, Math.max(0.2, zoom * scale));
-    // adjust pan so zoom centers on pinch midpoint
-    pan = {
-      x: newMid.x - (newMid.x - pan.x) * (newZoom / zoom) + (newMid.x - oldMid.x),
-      y: newMid.y - (newMid.y - pan.y) * (newZoom / zoom) + (newMid.y - oldMid.y),
+    touchMoved=true;
+    const newDist=getTouchDist(t), oldDist=getTouchDist(lastTouches);
+    const newMid=getTouchMid(t), oldMid=getTouchMid(lastTouches);
+    const newZoom=Math.min(2,Math.max(0.2,zoom*(newDist/oldDist)));
+    pan={
+      x:newMid.x-(newMid.x-pan.x)*(newZoom/zoom)+(newMid.x-oldMid.x),
+      y:newMid.y-(newMid.y-pan.y)*(newZoom/zoom)+(newMid.y-oldMid.y),
     };
-    zoom = newZoom;
+    zoom=newZoom;
     document.getElementById('world').setAttribute('transform',`translate(${pan.x},${pan.y}) scale(${zoom})`);
   }
-  lastTouches = t;
+  lastTouches=t;
 },{passive:false});
 
-canvas.addEventListener('touchend',e=>{ lastTouches = e.touches.length ? e.touches : null; },{passive:false});
+canvas.addEventListener('touchend',e=>{
+  // If finger lifted without moving = tap → find node under finger and select it
+  if(!touchMoved && touchStartPos && e.changedTouches.length===1){
+    const touch=e.changedTouches[0];
+    const el=document.elementFromPoint(touch.clientX, touch.clientY);
+    const nodeGroup=el?.closest('[data-node-id]');
+    if(nodeGroup){
+      selectNode(nodeGroup.dataset.nodeId);
+    }
+  }
+  lastTouches=e.touches.length ? e.touches : null;
+  touchStartPos=null;
+},{passive:false});
 document.getElementById('btn-zoom-in').onclick  =()=>{zoom=Math.min(2,zoom+0.1);render();};
 document.getElementById('btn-zoom-out').onclick =()=>{zoom=Math.max(0.2,zoom-0.1);render();};
 document.getElementById('btn-zoom-home').onclick=()=>{zoom=0.85;pan={x:window.innerWidth/2,y:140};render();};
@@ -774,9 +1010,21 @@ document.getElementById('btn-add').onclick    =openAddModal;
 document.getElementById('btn-auth').onclick   =()=>requireAuth(()=>showToast('🔓 Modo editor activo'));
 document.getElementById('btn-export').onclick =doExport;
 document.getElementById('btn-import').onclick =doImport;
-document.getElementById('btn-full').onclick   =()=>{focusRoot=null;document.getElementById('btn-full').style.display='none';render();};
+document.getElementById('btn-full').onclick   =()=>{
+  focusRoot=null;
+  pan={x:window.innerWidth/2, y:140};
+  zoom=0.85;
+  document.getElementById('btn-full').style.display='none';
+  render();
+};
 document.getElementById('info-close').onclick  =closeInfoPanel;
-document.getElementById('ip-btn-focus').onclick=()=>{focusRoot=selected;document.getElementById('btn-full').style.display='';render();};
+document.getElementById('ip-btn-focus').onclick=()=>{
+  focusRoot=selected;
+  pan={x:window.innerWidth/2, y:140};
+  zoom=0.85;
+  document.getElementById('btn-full').style.display='';
+  render();
+};
 document.getElementById('ip-btn-edit').onclick =()=>openEditModal(selected);
 document.getElementById('ip-btn-delete').onclick=()=>openDeleteModal(selected);
 document.getElementById('auth-ok').onclick    =doAuth;
@@ -790,6 +1038,11 @@ document.getElementById('delete-confirm').onclick=doDelete;
 document.getElementById('delete-cancel').onclick =()=>closeModal('modal-delete');
 
 // ── Init ─────────────────────────────────────────────────────
+// Close info panel when tapping the canvas background (mobile UX)
+canvas.addEventListener('click', e => {
+  if (!e.target.closest('[data-node-id]')) closeInfoPanel();
+});
+
 loadFromFirebase();
 
 </script>
