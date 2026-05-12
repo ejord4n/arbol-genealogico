@@ -591,6 +591,58 @@ function buildLayout(rootId, visibleIds) {
     units.forEach((u,i) => placeUnit(u, cx[i], rowY));
   });
 
+  // ── STEP 4: bottom-up refinement ─────────────────────────────
+  // After placing all generations top-down, nudge each unit toward
+  // the center of its children (already placed below).
+  // Repeat several times so the adjustments propagate upward.
+  for(let iter=0; iter<4; iter++){
+    // Process generations from bottom to top (skip the bottommost)
+    const revGens = [...allGens].reverse().slice(1);
+    revGens.forEach(g => {
+      const rowY = (g - minGen) * (NODE_H_MIN + V_GAP);
+      const units = unitsForGen(g);
+      if(!units.length) return;
+
+      // Re-sort by current pos to maintain left-right order
+      units.sort((a,b) => {
+        const xa = pos[a.ids[0]]?.x ?? 0;
+        const xb = pos[b.ids[0]]?.x ?? 0;
+        return xa - xb;
+      });
+
+      // Ideal X for each unit = center of its children's current positions
+      function childrenMidX(u){
+        const ch = u.ids.flatMap(id => childrenOf(id)).filter(c => pos[c] && (!visibleIds||visibleIds.has(c)));
+        if(!ch.length) return null;
+        const xs = ch.map(c => pos[c].x);
+        return (Math.min(...xs) + Math.max(...xs)) / 2;
+      }
+
+      const cx2 = units.map(u => pos[u.ids[0]]?.x ?? 0);
+
+      // Left to right: pull toward children center
+      for(let i=0; i<units.length; i++){
+        const ideal = childrenMidX(units[i]);
+        if(ideal === null) continue;
+        let target = ideal;
+        if(i > 0) target = Math.max(target, cx2[i-1] + unitW(units[i-1])/2 + H_GAP + unitW(units[i])/2);
+        if(i < units.length-1) target = Math.min(target, cx2[i+1] - unitW(units[i+1])/2 - H_GAP - unitW(units[i])/2);
+        cx2[i] = target;
+      }
+      // Right to left
+      for(let i=units.length-1; i>=0; i--){
+        const ideal = childrenMidX(units[i]);
+        if(ideal === null) continue;
+        let target = ideal;
+        if(i > 0) target = Math.max(target, cx2[i-1] + unitW(units[i-1])/2 + H_GAP + unitW(units[i])/2);
+        if(i < units.length-1) target = Math.min(target, cx2[i+1] - unitW(units[i+1])/2 - H_GAP - unitW(units[i])/2);
+        cx2[i] = target;
+      }
+
+      units.forEach((u,i) => placeUnit(u, cx2[i], rowY));
+    });
+  }
+
   // Safety net for unpositioned nodes
   let ox=2000;
   allIds.forEach(id=>{ if(!pos[id]){pos[id]={x:ox,y:(gen[id]-minGen)*(NODE_H_MIN+V_GAP)};ox+=NODE_W+H_GAP;} });
