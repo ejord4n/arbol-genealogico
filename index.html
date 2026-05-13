@@ -257,7 +257,6 @@ const LINE_H     = 14;
 const TOP_PAD    = 16;
 const YEAR_H     = 18;
 const BOT_PAD    = 8;
-const MARGIN     = 800;
 
 // ── Seed data (used only if Firestore is empty) ───────────────
 const SEED = {
@@ -343,6 +342,9 @@ async function loadFromFirebase() {
     data = local ? JSON.parse(local) : JSON.parse(JSON.stringify(SEED));
   }
   hideStatus();
+  // Build layout first so fitToScreen can compute bounding box
+  positions = buildLayout("eric", null);
+  fitToScreen();
   render();
 }
 
@@ -674,10 +676,51 @@ function el(tag,attrs={},text=''){
 }
 
 // ── Viewport culling ─────────────────────────────────────────
+// Use canvas actual dimensions, not window, for correct mobile behavior
 function isVisible(p){
-  const vw=window.innerWidth,vh=window.innerHeight;
-  return p.x>=(0-pan.x)/zoom-MARGIN && p.x<=(vw-pan.x)/zoom+MARGIN &&
-         p.y>=(0-pan.y)/zoom-MARGIN && p.y<=(vh-pan.y)/zoom+MARGIN;
+  const r  = canvas.getBoundingClientRect();
+  const vw = r.width  || window.innerWidth;
+  const vh = r.height || window.innerHeight;
+  // Convert screen bounds to world coordinates with generous padding
+  const pad = Math.max(NODE_W, NODE_H_MIN) * 2;
+  const wx1 = (0  - pan.x) / zoom - pad;
+  const wy1 = (0  - pan.y) / zoom - pad;
+  const wx2 = (vw - pan.x) / zoom + pad;
+  const wy2 = (vh - pan.y) / zoom + pad;
+  return p.x >= wx1 && p.x <= wx2 && p.y >= wy1 && p.y <= wy2;
+}
+
+// ── Fit tree to screen ───────────────────────────────────────
+// Calculates pan + zoom so the entire tree fits centered on screen
+function fitToScreen(){
+  if(!positions || !Object.keys(positions).length) return;
+  const r   = canvas.getBoundingClientRect();
+  const vw  = r.width  || window.innerWidth;
+  const vh  = r.height || window.innerHeight;
+
+  // Compute bounding box of all nodes
+  const xs = Object.values(positions).map(p => p.x);
+  const ys = Object.values(positions).map(p => [p.y, p.y + cardH(data.nodes[Object.keys(positions).find(id=>positions[id]===p)]?.name||'')]).flat();
+  const minX = Math.min(...xs) - NODE_W/2;
+  const maxX = Math.max(...xs) + NODE_W/2;
+  const minY = Math.min(...Object.values(positions).map(p=>p.y));
+  const maxY = Math.max(...Object.values(positions).map(p=>p.y)) + NODE_H_MIN + 20;
+
+  const treeW = maxX - minX;
+  const treeH = maxY - minY;
+
+  // Padding around tree
+  const PAD = 60;
+  const scaleX = (vw - PAD*2) / treeW;
+  const scaleY = (vh - PAD*2) / treeH;
+  zoom = Math.min(scaleX, scaleY, 1.0); // never zoom in beyond 100%
+  zoom = Math.max(zoom, 0.18);           // never too small
+
+  // Center the tree
+  pan = {
+    x: vw/2 - (minX + treeW/2) * zoom,
+    y: PAD - minY * zoom
+  };
 }
 
 // ── Render ───────────────────────────────────────────────────
@@ -1055,7 +1098,7 @@ canvas.addEventListener('touchend',e=>{
 },{passive:false});
 document.getElementById('btn-zoom-in').onclick  =()=>{zoom=Math.min(2,zoom+0.1);render();};
 document.getElementById('btn-zoom-out').onclick =()=>{zoom=Math.max(0.2,zoom-0.1);render();};
-document.getElementById('btn-zoom-home').onclick=()=>{zoom=0.85;pan={x:window.innerWidth/2,y:140};render();};
+document.getElementById('btn-zoom-home').onclick=()=>{ positions=buildLayout(focusRoot||"eric", focusRoot?getSubtreeIds(focusRoot):null); fitToScreen(); render(); };
 
 // ── Button wiring ────────────────────────────────────────────
 document.getElementById('btn-add').onclick    =openAddModal;
@@ -1064,17 +1107,17 @@ document.getElementById('btn-export').onclick =doExport;
 document.getElementById('btn-import').onclick =doImport;
 document.getElementById('btn-full').onclick   =()=>{
   focusRoot=null;
-  pan={x:window.innerWidth/2, y:140};
-  zoom=0.85;
   document.getElementById('btn-full').style.display='none';
+  positions=buildLayout("eric", null);
+  fitToScreen();
   render();
 };
 document.getElementById('info-close').onclick  =closeInfoPanel;
 document.getElementById('ip-btn-focus').onclick=()=>{
   focusRoot=selected;
-  pan={x:window.innerWidth/2, y:140};
-  zoom=0.85;
   document.getElementById('btn-full').style.display='';
+  positions=buildLayout(focusRoot, getSubtreeIds(focusRoot));
+  fitToScreen();
   render();
 };
 document.getElementById('ip-btn-edit').onclick =()=>openEditModal(selected);
@@ -1093,6 +1136,14 @@ document.getElementById('delete-cancel').onclick =()=>closeModal('modal-delete')
 // Close info panel when tapping the canvas background (mobile UX)
 canvas.addEventListener('click', e => {
   if (!e.target.closest('[data-node-id]')) closeInfoPanel();
+});
+
+// Re-fit tree when screen rotates or resizes
+window.addEventListener('resize', () => {
+  if(data && positions && Object.keys(positions).length){
+    fitToScreen();
+    render();
+  }
 });
 
 loadFromFirebase();
