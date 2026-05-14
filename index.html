@@ -507,138 +507,166 @@ function buildLayout(rootId, visibleIds) {
     }
   }
 
-  // ── STEP 3: place each generation top-down ───────────────────
-  // Sort units within each row by the X of their parents so that
-  // children of left-side parents appear on the left, etc.
-  allGens.forEach(g => {
-    const rowY  = (g - minGen) * (NODE_H_MIN + V_GAP);
-    const units = unitsForGen(g);
-    if(!units.length) return;
+  // ── STEP 3: compute subtree widths bottom-up ─────────────────
+  // For each unit, its "subtree width" is the total horizontal space
+  // needed to display it and ALL its descendants without overlap.
+  const subtreeW = {};
 
-    // Sort units by ideal parent X (nulls go to end)
+  function computeSubtreeW(u) {
+    const key = u.ids.join('_');
+    if (subtreeW[key] !== undefined) return subtreeW[key];
+
+    const children = u.ids.flatMap(id => childrenOf(id))
+      .filter((v,i,a) => a.indexOf(v)===i)
+      .filter(c => allIds.includes(c));
+
+    if (!children.length) {
+      subtreeW[key] = unitW(u);
+      return subtreeW[key];
+    }
+
+    // Group children into their own units for this gen+1
+    const childGen = gen[children[0]];
+    const childUnits = unitsForGen(childGen).filter(cu =>
+      cu.ids.some(id => children.includes(id))
+    );
+
+    const childrenTotalW = childUnits.reduce((s, cu, i) =>
+      s + computeSubtreeW(cu) + (i > 0 ? H_GAP : 0), 0
+    );
+
+    subtreeW[key] = Math.max(unitW(u), childrenTotalW);
+    return subtreeW[key];
+  }
+
+  // Compute subtree widths for all top-level units (those with no parents)
+  allGens.forEach(g => unitsForGen(g).forEach(u => computeSubtreeW(u)));
+
+  // ── STEP 4: place generations top-down using subtree widths ──
+  // Start with the topmost generation, spread units by their subtree widths,
+  // then place each child generation centered under its parent unit.
+
+  // Place a single generation given an array of (unit, centerX) pairs
+  function placeRow(pairs, rowY) {
+    pairs.forEach(({u, cx}) => placeUnit(u, cx, rowY));
+  }
+
+  // For the topmost generation, spread units evenly
+  const topGen  = allGens[0];
+  const topUnits = unitsForGen(topGen);
+  const topRowY  = 0;
+
+  if (topUnits.length) {
+    const totalW = topUnits.reduce((s,u,i) =>
+      s + computeSubtreeW(u) + (i>0 ? H_GAP : 0), 0);
+    let cursor = -totalW / 2;
+    topUnits.forEach(u => {
+      const sw = computeSubtreeW(u);
+      placeUnit(u, cursor + sw/2, topRowY);
+      cursor += sw + H_GAP;
+    });
+  }
+
+  // For each subsequent generation, place children centered under their parent unit
+  allGens.slice(1).forEach(g => {
+    const rowY = (g - minGen) * (NODE_H_MIN + V_GAP);
+    const units = unitsForGen(g);
+    if (!units.length) return;
+
+    // Sort by parent X
     units.sort((a,b) => {
-      const ia = idealX(a);
-      const ib = idealX(b);
+      const ia = idealX(a); const ib = idealX(b);
       if(ia===null && ib===null) return 0;
-      if(ia===null) return 1;
-      if(ib===null) return -1;
+      if(ia===null) return 1; if(ib===null) return -1;
       return ia - ib;
     });
 
-    // Assign initial cx = ideal parent X, or null
+    // Initial cx = ideal parent X
     const cx = units.map(u => idealX(u));
 
-    // Fill nulls by spacing from neighbours
-    const hasAny = cx.some(v => v !== null);
-    if(!hasAny){
+    // Fill nulls
+    const hasAny = cx.some(v => v!==null);
+    if (!hasAny) {
       const tw = units.reduce((s,u,i) => s+unitW(u)+(i>0?H_GAP:0), 0);
       let sx = -tw/2;
       units.forEach((u,i) => { cx[i]=sx+unitW(u)/2; sx+=unitW(u)+H_GAP; });
     } else {
-      // Forward fill
       for(let i=1;i<cx.length;i++)
-        if(cx[i]===null)
-          cx[i]=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
-      // Backward fill
+        if(cx[i]===null) cx[i]=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
       for(let i=cx.length-2;i>=0;i--)
-        if(cx[i]===null)
-          cx[i]=cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
+        if(cx[i]===null) cx[i]=cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
     }
 
-    // ── Forward pass: enforce minimum spacing left→right ──
+    // ── COLLISION RESOLUTION: the core fix ──
+    // Forward pass: push right any unit that overlaps its left neighbor
+    for(let i=1;i<units.length;i++){
+      const minCx = cx[i-1] + unitW(units[i-1])/2 + H_GAP + unitW(units[i])/2;
+      if(cx[i] < minCx) cx[i] = minCx;
+    }
+    // Backward pass: push left any unit that overlaps its right neighbor
+    for(let i=cx.length-2;i>=0;i--){
+      const maxCx = cx[i+1] - unitW(units[i+1])/2 - H_GAP - unitW(units[i])/2;
+      if(cx[i] > maxCx) cx[i] = maxCx;
+      // Re-enforce left neighbor after moving left
+      if(i>0){
+        const minCx2 = cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+        if(cx[i] < minCx2) cx[i] = minCx2;
+      }
+    }
+    // Final forward pass to guarantee no overlaps remain
     for(let i=1;i<units.length;i++){
       const minCx = cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
-      if(cx[i]<minCx) cx[i]=minCx;
-    }
-
-    // ── Backward pass: pull right units left toward their ideal
-    //    without violating the unit to their right ──
-    for(let i=cx.length-2;i>=0;i--){
-      const ideal = idealX(units[i]);
-      if(ideal===null) continue;
-      const maxCx = cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2;
-      cx[i] = Math.min(cx[i], Math.max(ideal, cx[i]-0)); // don't move right
-      if(cx[i]>maxCx) cx[i]=maxCx;
-      // Also don't violate left neighbour
-      if(i>0){
-        const minCx2=cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
-        if(cx[i]<minCx2) cx[i]=minCx2;
-      }
-    }
-
-    // ── Pull-to-parents refinement: 3 iterations of nudging
-    //    each unit toward its ideal X while keeping min spacing ──
-    for(let iter=0;iter<3;iter++){
-      // Left to right
-      for(let i=0;i<units.length;i++){
-        const ideal = idealX(units[i]);
-        if(ideal===null) continue;
-        let target = ideal;
-        // Clamp within neighbours
-        if(i>0) target=Math.max(target, cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
-        if(i<cx.length-1) target=Math.min(target, cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
-        if(target >= cx[i] - 0.1) cx[i]=target; // only pull, don't push right
-      }
-      // Right to left
-      for(let i=cx.length-1;i>=0;i--){
-        const ideal = idealX(units[i]);
-        if(ideal===null) continue;
-        let target = ideal;
-        if(i>0) target=Math.max(target, cx[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
-        if(i<cx.length-1) target=Math.min(target, cx[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
-        cx[i]=target;
-      }
+      if(cx[i] < minCx) cx[i] = minCx;
     }
 
     units.forEach((u,i) => placeUnit(u, cx[i], rowY));
   });
 
-  // ── STEP 4: bottom-up refinement ─────────────────────────────
-  // After placing all generations top-down, nudge each unit toward
-  // the center of its children (already placed below).
-  // Repeat several times so the adjustments propagate upward.
-  for(let iter=0; iter<4; iter++){
-    // Process generations from bottom to top (skip the bottommost)
-    const revGens = [...allGens].reverse().slice(1);
-    revGens.forEach(g => {
+  // ── STEP 5: bottom-up parent centering ───────────────────────
+  // Pull each parent unit toward the center of its children.
+  // Uses a safe nudge that NEVER violates minimum spacing.
+  for(let iter=0; iter<5; iter++){
+    [...allGens].reverse().slice(1).forEach(g => {
       const rowY = (g - minGen) * (NODE_H_MIN + V_GAP);
       const units = unitsForGen(g);
       if(!units.length) return;
 
-      // Re-sort by current pos to maintain left-right order
-      units.sort((a,b) => {
-        const xa = pos[a.ids[0]]?.x ?? 0;
-        const xb = pos[b.ids[0]]?.x ?? 0;
-        return xa - xb;
-      });
+      units.sort((a,b) => (pos[a.ids[0]]?.x??0) - (pos[b.ids[0]]?.x??0));
 
-      // Ideal X for each unit = center of its children's current positions
       function childrenMidX(u){
-        const ch = u.ids.flatMap(id => childrenOf(id)).filter(c => pos[c] && (!visibleIds||visibleIds.has(c)));
+        const ch = u.ids.flatMap(id => childrenOf(id))
+          .filter(c => pos[c] && allIds.includes(c));
         if(!ch.length) return null;
         const xs = ch.map(c => pos[c].x);
-        return (Math.min(...xs) + Math.max(...xs)) / 2;
+        return (Math.min(...xs)+Math.max(...xs))/2;
       }
 
       const cx2 = units.map(u => pos[u.ids[0]]?.x ?? 0);
 
-      // Left to right: pull toward children center
-      for(let i=0; i<units.length; i++){
-        const ideal = childrenMidX(units[i]);
-        if(ideal === null) continue;
-        let target = ideal;
-        if(i > 0) target = Math.max(target, cx2[i-1] + unitW(units[i-1])/2 + H_GAP + unitW(units[i])/2);
-        if(i < units.length-1) target = Math.min(target, cx2[i+1] - unitW(units[i+1])/2 - H_GAP - unitW(units[i])/2);
-        cx2[i] = target;
+      // Two-pass nudge
+      for(let pass=0; pass<2; pass++){
+        for(let i=0;i<units.length;i++){
+          const ideal = childrenMidX(units[i]);
+          if(ideal===null) continue;
+          let t = ideal;
+          if(i>0)              t = Math.max(t, cx2[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
+          if(i<units.length-1) t = Math.min(t, cx2[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
+          cx2[i] = t;
+        }
+        for(let i=units.length-1;i>=0;i--){
+          const ideal = childrenMidX(units[i]);
+          if(ideal===null) continue;
+          let t = ideal;
+          if(i>0)              t = Math.max(t, cx2[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2);
+          if(i<units.length-1) t = Math.min(t, cx2[i+1]-unitW(units[i+1])/2-H_GAP-unitW(units[i])/2);
+          cx2[i] = t;
+        }
       }
-      // Right to left
-      for(let i=units.length-1; i>=0; i--){
-        const ideal = childrenMidX(units[i]);
-        if(ideal === null) continue;
-        let target = ideal;
-        if(i > 0) target = Math.max(target, cx2[i-1] + unitW(units[i-1])/2 + H_GAP + unitW(units[i])/2);
-        if(i < units.length-1) target = Math.min(target, cx2[i+1] - unitW(units[i+1])/2 - H_GAP - unitW(units[i])/2);
-        cx2[i] = target;
+
+      // Final collision guarantee after nudging
+      for(let i=1;i<units.length;i++){
+        const minCx = cx2[i-1]+unitW(units[i-1])/2+H_GAP+unitW(units[i])/2;
+        if(cx2[i]<minCx) cx2[i]=minCx;
       }
 
       units.forEach((u,i) => placeUnit(u, cx2[i], rowY));
